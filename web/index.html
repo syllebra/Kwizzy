@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#06070d">
+<meta name="description" content="Kwizzy — play 5,566 quiz questions from quizo.fr, connaisseances.com and openquizzdb.org, as source quizzes or custom 20-question quizzes.">
+<title>Kwizzy — quiz corpus player</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2306070d'/%3E%3Cpath d='M9 8h14M9 16h14M9 24h14' stroke='%2335e2d2' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<script src="app.js" defer></script>
+</head>
+<body data-kwizzy="boot">
+
+<div class="bg-aurora" aria-hidden="true"></div>
+<canvas class="bg-net" aria-hidden="true"></canvas>
+
+<!-- Loading: real progress bar fed by streamed bytes of corpus.json -->
+<div id="loader" class="loader" role="status" aria-live="polite">
+  <div class="loader-bar" aria-hidden="true"><i></i></div>
+  <p class="loader-note">Waking the corpus…</p>
+</div>
+
+<main id="main">
+  <header class="brand">
+    <h1 class="brand-name">Kwizzy</h1>
+    <p class="brand-tag">A living library of <span class="stat-n" id="stat-quizzes">—</span> quizzes and
+      <span class="stat-n" id="stat-questions">—</span> questions, from three public quiz sites.</p>
+  </header>
+
+  <!-- Launcher card first, per spec -->
+  <section class="glass launcher" id="launcher" aria-label="Custom quiz launcher">
+    <h2 class="h">Custom Quiz — 20 questions</h2>
+    <p class="hint">Pick one Level (required). Optionally add one Category. No pick = every Category.</p>
+
+    <div class="pick-level" id="pick-level" role="group" aria-label="Level">
+      <button class="chip lvl" data-lvl="0">Facile</button><button class="chip lvl" data-lvl="1">Moyen</button
+      ><button class="chip lvl" data-lvl="2">Difficile</button>
+    </div>
+
+    <div class="pick-cat" role="group" aria-label="Category (optional)">
+      <div class="chips-scroll" id="cat-chips"></div>
+    </div>
+
+    <div class="launch-actions">
+      <button class="btn primary" id="btn-play">Play custom quiz</button>
+      <button class="btn" id="btn-browse">Browse categories</button>
+    </div>
+  </section>
+
+  <section class="library" id="library" aria-label="Quiz library">
+    <h2 class="h">Browse by Category</h2>
+    <div class="filters" id="filters" role="group" aria-label="Filters"></div>
+    <div class="grid" id="grid"></div>
+    <div class="sheet-slot" id="sheet-slot"></div>
+  </section>
+
+  <section class="credits" id="credits">
+    <h2 class="h">Sources &amp; credits</h2>
+    <ul>
+      <li><a href="https://quizo.fr/">quizo.fr</a> — French quiz site</li>
+      <li><a href="https://connaisseances.com/">connaisseances.com</a> — French quiz site</li>
+      <li><a href="https://openquizzdb.org/">openquizzdb.org</a> — open quiz database,
+        <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a></li>
+    </ul>
+    <p class="fine">Kwizzy is an unofficial player: it re-hosts questions locally for offline play and links back to
+      each original quiz. Memory lives in your browser only — nothing is sent anywhere.</p>
+    <p class="legend">Legend — a <span class="badge">Answered before</span> badge on a question means it already
+      lives in your browser memory. Custom quizzes draw unseen questions first, then top up with badged ones.</p>
+    <div class="memory-tools">
+      <button class="btn" id="btn-stats">My stats</button>
+      <button class="btn danger" id="btn-reset">Reset memory</button>
+    </div>
+  </section>
+</main>
+
+<!-- Play stage: the scrollable stack of revealed questions -->
+<div id="stage" hidden></div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+</body>
+</html>
