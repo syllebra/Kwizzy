@@ -681,6 +681,13 @@ function makeCard(qi, n, total) {
   }
 
   var opts = mk("div", "opts");
+  // Long answers stop fitting the 2-per-row grid: past ~40 characters the text wraps
+  // 3+ lines in a half-width column, so the whole block goes vertical (one per row).
+  // In the corpus only ~2.6% of Questions reach that length — the grid is untouched
+  // for the rest, which is what "only if long text inside" asks for.
+  var longest = 0;
+  for (k = 0; k < q[7].length; k++) longest = Math.max(longest, String(q[7][k]).length);
+  if (longest >= 40) opts.className = "opts vert";
   var order = [], k;
   for (k = 0; k < q[7].length; k++) order.push(k);
   shuffle(order);
@@ -742,13 +749,40 @@ function gradeCard(card, slot) {
 function askCard(card) {
   return new Promise(function (resolve) {
     var done = false;
+    var sel = null;
+    var confirm = null;
+    var opts = card.querySelector("div.opts");
     card.addEventListener("click", function (ev) {
-      if (done) return;
-      var t = null;
-      if (ev.target) t = ev.target.closest ? ev.target.closest("button.opt") : null;
+      if (done || !ev.target || !ev.target.closest) return;
+
+      // Tapping the Validate button is what grades the answer.
+      var v = ev.target.closest("button.validate");
+      if (v) {
+        if (sel === null) { toast("Pick an answer first, then Validate."); return; }
+        done = true;
+        try { card.removeChild(confirm); } catch (e) {}
+        resolve(sel);
+        return;
+      }
+
+      // Tapping an option only SELECTS it: a blue highlight, no grading yet.
+      // The player can move the highlight until Validate is pressed.
+      var t = ev.target.closest("button.opt");
       if (!t || !t.dataset.slot) return;
-      done = true;
-      resolve(parseInt(t.dataset.slot, 10));
+      sel = parseInt(t.dataset.slot, 10);
+      // classList (not className): thump later adds selPop to the same button, so
+      // an exact className compare would miss it when the highlight moves away.
+      var kids = opts.children;
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] === t) kids[i].classList.add("sel");
+        else kids[i].classList.remove("sel");
+      }
+      thump(t, "selPop");
+      if (!confirm) {
+        confirm = mk("button", "btn press validate", "");
+        add(confirm, mk("span", "btn-label", "Validate"));
+        add(card, confirm);
+      }
     });
   });
 }
@@ -1093,13 +1127,26 @@ function onCorpus(payload) {
   renderCatChips();
   document.getElementById("stat-quizzes").textContent = String(QUIZ.length);
   document.getElementById("stat-questions").textContent = String(Q.length);
-  // The gauge is full, so it fires: the ring's own beat before the app takes over.
-  document.body.dataset.kwizzy = "ready";
-  // The gauge is full, so it fires. After "ready": the burst layer lives inside .app,
-  // which is hidden while booting, so sparks fired before now would be invisible.
+  // The gauge is full, so it fires — BEFORE "ready": the loader card is still on screen
+  // (it lives in the Title Screen now, and the Title is visible while booting), so the
+  // sparks are aimed at the real ring. Once "ready" lands, the card retires itself.
   if (loader) burstAt(loader.querySelector(".loader-gauge"), 20);
   var start = document.getElementById("btn-start");
   if (start) start.disabled = false;
+  var about = document.getElementById("btn-about");
+  if (about) about.disabled = false;
+  // Loading sat ON the Title Screen, so it leaves the way a title card leaves: fade-and-
+  // shrink out FIRST, then "ready" flips it to display:none (the CSS hides the loader
+  // whenever kwizzy is not "boot", so setting it mid-fade would cut the fade).
+  if (loader && !reduceMotion) {
+    loader.classList.add("loader-out");
+    setTimeout(function () {
+      if (loader) loader.classList.remove("loader-out");
+      document.body.dataset.kwizzy = "ready";
+    }, 340);
+  } else {
+    document.body.dataset.kwizzy = "ready";
+  }
 }
 
 function syncChoiceButtons() {

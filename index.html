@@ -19,23 +19,6 @@
 <div class="bg-grid" aria-hidden="true"></div>
 <canvas class="bg-net" aria-hidden="true"></canvas>
 
-<!-- Loading: a round gauge swept by the real streamed bytes of corpus.json (not a fake spinner) -->
-<div id="loader" class="loader" role="status" aria-live="polite">
-  <div class="loader-halo" aria-hidden="true"></div>
-  <div class="loader-gauge" aria-hidden="true">
-    <svg viewBox="0 0 100 100">
-      <defs>
-        <linearGradient id="ringgrad" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="90" y2="90">
-          <stop offset="0" stop-color="#35e2d2" /><stop offset=".55" stop-color="#a868ff" /><stop offset="1" stop-color="#ff6a9a" />
-        </linearGradient>
-      </defs>
-      <circle class="ring-track" cx="50" cy="50" r="40" fill="none" /><circle class="ring-fill" cx="50" cy="50" r="40" fill="none" />
-    </svg>
-    <div class="loader-glyph">?</div>
-  </div>
-  <p class="loader-note">Waking the corpus…</p>
-</div>
-
 <div class="app" id="app">
 
   <!-- ═══════════ SCREEN: TITLE ═══════════ -->
@@ -46,12 +29,31 @@
         <img class="logo" src="media/kwizzy-title.png"
              alt="Kwizzy — Quiz Game" width="719" height="350">
       </div>
+
+      <!-- Loading is ON the Title Screen: the app is already showing its title while
+           corpus.json streams in, so the gauge is a card in the title's own flow. -->
+      <div id="loader" class="loader" role="status" aria-live="polite">
+        <div class="loader-halo" aria-hidden="true"></div>
+        <div class="loader-gauge" aria-hidden="true">
+          <svg viewBox="0 0 100 100">
+            <defs>
+              <linearGradient id="ringgrad" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="90" y2="90">
+                <stop offset="0" stop-color="#35e2d2" /><stop offset=".55" stop-color="#a868ff" /><stop offset="1" stop-color="#ff6a9a" />
+              </linearGradient>
+            </defs>
+            <circle class="ring-track" cx="50" cy="50" r="40" fill="none" /><circle class="ring-fill" cx="50" cy="50" r="40" fill="none" />
+          </svg>
+          <div class="loader-glyph">?</div>
+        </div>
+        <p class="loader-note">Waking the corpus…</p>
+      </div>
+
       <p class="tagline">A living library of <span class="stat-n" id="stat-quizzes">—</span> quizzes and
         <span class="stat-n" id="stat-questions">—</span> questions, from three public quiz sites.</p>
       <button class="btn primary btn-xl press" id="btn-start" disabled>
         <span class="btn-label">Play</span>
       </button>
-      <button class="btn ghost btn-sm press" id="btn-about">
+      <button class="btn ghost btn-sm press" id="btn-about" disabled>
         <span class="btn-label">Credits &amp; memory</span>
       </button>
     </div>
