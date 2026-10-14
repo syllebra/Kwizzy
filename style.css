@@ -536,7 +536,10 @@ body[data-screen="about"]    #screen-about{display:flex;flex-direction:column}
 .card .validate{
   /* flex (not the .btn inline-flex) + auto side margins => dead centre of the card,
      in BOTH the grid and the one-per-row option layout. */
-  display:flex;width:max(52%,150px);margin:12px auto 0;justify-content:center;
+  display:flex;width:max(52%,150px);justify-content:center;
+  /* auto on BOTH sides = centred whatever the card width (grid or one-per-row);
+     equal top/bottom margins so it also sits midway in the card's bottom band. */
+  margin:14px auto 12px;
   border-color:rgba(79,216,255,.5);box-shadow:0 10px 24px rgba(79,216,255,.22);
   animation:validateBeat 1.6s ease-in-out infinite;
 }
