@@ -42,6 +42,49 @@ var session = null;
 /* ---------- screens + juice state (presentation only) ---------- */
 var SCREENS = ["title", "choice", "cats", "play", "about"];
 var screen = "title";
+
+/* Back-key navigation: where "back" goes is derived from the SCREEN YOU ARE ON, so it
+   works even where the markup hard-wires an arrow to one fixed screen (the cats arrow
+   says "title" but from Random 20 you came from the Choice screen — the key knows). */
+var backTarget = { title: null, choice: "title", cats: "choice", play: "choice", about: "title" };
+var backArmed = false, backArmedT = 0;
+var SCREENNAME = { title: "the Title", choice: "the Menu", cats: "the Categories", play: "Play", about: "the Credits" };
+
+function inPlay() {
+  return !!session && session.answered < session.total;
+}
+
+function goBack() {
+  var dest = backTarget[screen];
+  if (!dest) { toast("You are on the Title screen already."); return; }
+  if (screen === "play" && inPlay()) {
+    // A quiz is running: leaving it loses the score, so a tap only ARM the exit.
+    if (!backArmed) {
+      backArmed = true;
+      toast("A quiz is in progress (" + session.answered + " of " + session.total +
+        " answered) — tap back AGAIN to leave it; an unfinished run is not scored.");
+      if (backArmedT) clearTimeout(backArmedT);
+      backArmedT = setTimeout(function () { backArmed = false; backArmedT = 0; }, 6000);
+      return;
+    }
+    backArmed = false;
+    if (backArmedT) { clearTimeout(backArmedT); backArmedT = 0; }
+  }
+  var prev = screen;
+  leavePlay();
+  show(dest);
+  toast("Back to " + SCREENNAME[dest] + " · tap again to go back further.");
+}
+
+function leavePlay() {
+  document.body.dataset.kwizzy = "ready";
+  if (!stage) stage = document.getElementById("stage");
+  stage.hidden = true;
+  stage.className = "";
+  stack = null;
+  hud = null;
+  session = null;
+}
 var chosenLvl = -1;          // Difficulty picked on the Choice screen
 var catsMode = "random";     // "random" | "existing"
 var switching = false;
@@ -249,7 +292,15 @@ function wirePress(root) {
        chips, skip, options — and any button added later) gets a subtle 20 ms pulse.
        wirePress(document) is wired at boot, so future screens inherit it for free. */
     var b = ev.target && ev.target.closest ? ev.target.closest("button") : null;
-    if (b && !b.disabled) haptic(20);
+    if (b && !b.disabled) {
+      /* One TASK LATER, not synchronously: Chrome blocks navigator.vibrate() until a
+         user gesture has been COMMITTED to the frame (the click that carries this very
+         tap only commits when its handler returns). A synchronous call is therefore
+         swallowed on the first tap of a session — which is exactly why PLAY and the
+         credits button felt dead on a fresh page. Deferred, the gesture is already in
+         when the pulse fires. */
+      setTimeout(function () { haptic(20); }, 0);
+    }
     var t = ev.target && ev.target.closest ? ev.target.closest(".press, .opt, .catcard, .fchip, .mode-card, .iconbtn") : null;
     if (!t || t.disabled) return;
     t.classList.remove("shake");
@@ -924,12 +975,7 @@ function showSummary() {
   var back = mk("button", "btn press", "");
   add(back, mk("span", "btn-label", "Back to menu"));
   back.addEventListener("click", function () {
-    document.body.dataset.kwizzy = "ready";
-    stage.hidden = true;
-    stage.className = "";
-    stack = null;
-    hud = null;
-    session = null;
+    leavePlay();
     show("choice");
   });
   add(acts, again, back);
@@ -1181,13 +1227,20 @@ function wireScreens() {
   document.getElementById("btn-start").addEventListener("click", function () { show("choice"); });
   document.getElementById("btn-about").addEventListener("click", function () { show("about"); });
 
-  // Back arrows.
+  // Back arrows — and the Back KEY, both routed through goBack(), which knows where
+  // back goes from the CURRENT screen and asks for confirmation while a quiz is on.
   var backs = document.querySelectorAll("[data-back]");
   for (var b = 0; b < backs.length; b++) {
     (function (btn) {
-      btn.addEventListener("click", function () { show(btn.dataset.back); });
+      btn.addEventListener("click", function () { goBack(); });
     })(backs[b]);
   }
+  window.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape" && ev.key !== "Backspace") return;
+    ev.preventDefault();
+    haptic(40);
+    goBack();
+  });
 
   // Difficulty chips: one selection at a time, mirrored into chosenLvl.
   var lv = document.getElementById("pick-level");
