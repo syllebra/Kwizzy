@@ -95,10 +95,15 @@ function loadMem() {
     var raw = localStorage.getItem(LS_KEY);
     if (raw) {
       var o = JSON.parse(raw);
-      if (o && o.a && o.b) { mem = o; return; }
+      if (o && o.a && o.b) {
+        mem = o;
+        if (!mem.t) mem.t = {};   // question id -> epoch ms of the last time it was seen
+        if (!mem.s) mem.s = {};   // Origin key -> epoch ms of the last time it was played
+        return;
+      }
     }
   } catch (e) {}
-  mem = { a: {}, b: {} };
+  mem = { a: {}, b: {}, t: {}, s: {} };
 }
 function answered(id) { return mem.a[id] === 1; }
 function markAnswered(id) {
@@ -116,6 +121,45 @@ function bestKey(meta) {
   return meta.catIdx < 0 ? "c:" + meta.lvlIdx : "c:" + meta.lvlIdx + "|" + meta.catIdx;
 }
 function countKeys(o) { var n = 0; for (var k in o) n++; return n; }
+function maxVal(o) { var m = 0; for (var k in o) { if (o[k] > m) m = o[k]; } return m; }
+
+/* ---------- last time (mem.t = question id -> ms, mem.s = Origin key -> ms) ---------- */
+function quizLast(qi) { return mem.s["q:" + qi] || 0; }
+function originLast(key) { return mem.s[key] || 0; }
+function qLast(qi) { return mem.t[Q[qi][0]] || 0; }
+
+function touchOrigin(key) { mem.s[key] = Date.now(); queueSave(); }
+function touchQuestion(qi) { mem.t[Q[qi][0]] = Date.now(); queueSave(); }
+
+function absDate(ms) {
+  var d = new Date(ms);
+  var mo = d.getMonth() + 1, da = d.getDate(), y = d.getFullYear();
+  return y + "-" + (mo < 10 ? "0" : "") + mo + "-" + (da < 10 ? "0" : "") + da;
+}
+// A short, plain-English age for a timestamp. 0 (never) -> null, so nothing is claimed.
+function relTime(ms) {
+  if (!ms) return null;
+  var dt = Date.now() - ms;
+  if (dt < 0) dt = 0;
+  var mn = Math.floor(dt / 60000);
+  if (mn < 1) return "just now";
+  if (mn < 60) return mn + (mn === 1 ? " min" : " mins") + " ago";
+  var h = Math.floor(mn / 60);
+  if (h < 24) return h + (h === 1 ? " hr" : " hrs") + " ago";
+  var d = Math.floor(h / 24);
+  if (d === 1) return "yesterday";
+  if (d < 14) return d + " days ago";
+  var mo = Math.floor(d / 30);
+  if (mo < 12) return mo + (mo === 1 ? " month" : " months") + " ago";
+  return absDate(ms);
+}
+function sameDay(ms) {
+  if (!ms) return false;
+  var d = new Date(ms), n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+}
+// A "last played" stamp, warmed when the previous visit was today.
+function stamp(cls, text, ms) { return mk("span", cls + (sameDay(ms) ? " today" : ""), text); }
 
 /* ---------- toast ---------- */
 var toastEl = null, toastTimer = 0;
@@ -406,6 +450,7 @@ function renderGrid() {
     var list = catQuizzes[ci];
     var nq = 0, nquizzes = 0;
     var dots = [false, false, false];
+    var lastQz = 0, lastQ = 0;   // most recent Origin / Question visit inside this Category
     var j;
     for (j = 0; j < list.length; j++) {
       var qi = list[j];
@@ -413,19 +458,28 @@ function renderGrid() {
       nquizzes++;
       nq += qByQuiz[qi].length;
       dots[QUIZ[qi][3]] = true;
+      var qd = quizLast(qi);
+      if (qd > lastQz) lastQz = qd;
+      var qs = qByQuiz[qi], m;
+      for (m = 0; m < qs.length; m++) {
+        var qd2 = qLast(qs[m]);
+        if (qd2 > lastQ) lastQ = qd2;
+      }
     }
     if (!nquizzes) continue;
     var card = mk("div", "glass catcard");
     card.dataset.cat = String(ci);
     add(card, mk("div", "nm", CATS[ci]));
-    add(card, mk("div", "qt", plural(nquizzes, "quiz", "quizzes") + " · " + plural(nq, "question", "questions")));
+    add(card, mk("div", "qt", plural(nquizzes, "quiz", "quizzes") + " \u00b7 " + plural(nq, "question", "questions")));
+    if (lastQz) add(card, stamp("lastq", "Last played " + absDate(lastQz), lastQz));
+    if (lastQ) add(card, stamp("lastq2", "Last question seen " + absDate(lastQ), lastQ));
     var dotRow = mk("div", "srcdots");
     for (var s = 0; s < 3; s++) {
       if (!dots[s]) continue;
       add(dotRow, mk("i", "dot src-" + SRC[s], SRC_LABEL[SRC[s]]));
     }
     add(card, dotRow);
-    add(card, mk("div", "go", "Open ▾"));
+    add(card, mk("div", "go", "Open \u25be"));
     add(gridEl, card);
     shown++;
   }
@@ -480,6 +534,8 @@ function toggleSheet(catIdx) {
     var chips = mk("span", "chips");
     if (qz[2] >= 0) add(chips, mk("span", "chip lvl", lvlLabel(qz[2])));
     add(chips, mk("span", "chip src", SRC_LABEL[SRC[qz[3]]]));
+    var lastQz = quizLast(qi);
+    if (lastQz) add(chips, stamp("chip last", "last " + absDate(lastQz), lastQz));
     add(row, chips, mk("span", "n", qByQuiz[qi].length + " q"));
     var play = mk("button", "btn press", "");
     add(play, mk("span", "btn-label", "Play"));
@@ -537,12 +593,16 @@ function buildHud(meta) {
   add(hud, bar);
   var line = mk("div", "hud-line");
   var best = mem.b[bestKey(meta)];
+  var lastSeen = session.prevLast || 0;      // the visit before this one (startSession read it)
   add(line,
     mk("span", "sc", "0 / " + meta.total),
     " · ",
     mk("span", "pct", "0%"),
     " · ",
-    mk("span", "best", best ? "Best " + best[0] + "/" + best[1] + " (" + pct(best[0], best[1]) + "%)" : "no run yet"));
+    mk("span", "best", best ? "Best " + best[0] + "/" + best[1] + " (" + pct(best[0], best[1]) + "%)" : "no run yet"),
+    " · ",
+    mk("span", "last" + (lastSeen ? (sameDay(lastSeen) ? " today" : "") : " never"),
+       lastSeen ? "Last played " + absDate(lastSeen) : "never played here"));
   add(hud, line);
   return hud;
 }
@@ -564,6 +624,9 @@ function makeCard(qi, n, total) {
   var head = mk("div", "qnum", "Q" + (n + 1) + " / " + total);
   if (session.kind === "source") add(head, " · " + lvlLabel(q[3]));
   add(head, " · " + CATS[q[5]]);
+  // Last Time of this Question, read before this run touches it: absent = never played.
+  var qLastBefore = qLast(qi);
+  if (qLastBefore) add(head, stamp("last", "Last played " + relTime(qLastBefore), qLastBefore));
   add(art, head);
 
   if (answered(q[0])) add(art, mk("span", "badge", "Answered before"));
@@ -707,6 +770,9 @@ function startSession(meta, picks) {
     answered: 0,
     autoFollow: true
   };
+  // Last Time of this Origin: read the previous visit before stamping this one.
+  session.prevLast = originLast(session.key);
+  touchOrigin(session.key);
   document.body.dataset.kwizzy = "play";
   if (!stage) stage = document.getElementById("stage");
   stage.hidden = false;
@@ -730,6 +796,7 @@ function runLoop() {
       session.answered++;
       if (ok) session.score++;
       markAnswered(Q[session.picks[i]][0]);
+      touchQuestion(session.picks[i]);
       updateHud();
       if (i + 1 < session.total) countdown(card).then(function () { step(i + 1); });
       else showSummary();
@@ -749,8 +816,11 @@ function showSummary() {
   if (prev) add(sum, mk("div", "line", "Best before: " + prev[0] + " / " + prev[1] + " (" + pct(prev[0], prev[1]) + "%)"));
   else add(sum, mk("div", "line", "First run of this combination."));
   if (better) add(sum, mk("div", "new-best", "★ New best" + (prev ? " — you beat " + prev[0] : "")));
+  if (s.prevLast) add(sum, stamp("last", "Last played before: " + relTime(s.prevLast), s.prevLast));
+  else add(sum, mk("div", "last", "First time this Origin is played."));
   add(sum, mk("div", "legend",
-    "Badge “Answered before” = this question already lives in your memory; custom quizzes avoid it first."));
+    "Badge “Answered before” = this question already lives in your memory; custom quizzes avoid it first. " +
+    "A “Last played” line is the date of your previous visit — no line means never."));
 
   var acts = mk("div", "acts");
   var again = mk("button", "btn primary press", "");
@@ -869,7 +939,13 @@ function startSourceQuiz(qi) {
 function wireMemoryTools() {
   var statsBtn = document.getElementById("btn-stats");
   statsBtn.addEventListener("click", function () {
-    toast("Memory: " + countKeys(mem.a) + " questions answered · " + countKeys(mem.b) + " best scores kept.");
+    var parts = [countKeys(mem.a) + " questions answered", countKeys(mem.b) +
+      " best scores kept"];
+    var tmax = maxVal(mem.t);
+    if (tmax) parts.push("last question played " + relTime(tmax));
+    var smax = maxVal(mem.s);
+    if (smax) parts.push("last session " + relTime(smax));
+    toast("Memory: " + parts.join(" · ") + ".");
   });
 
   var armed = false;
@@ -894,6 +970,8 @@ function wireMemoryTools() {
     try { localStorage.removeItem(LS_KEY); } catch (e) {}
     mem.a = {};
     mem.b = {};
+    mem.t = {};
+    mem.s = {};
     toast("Memory erased.");
   });
 }

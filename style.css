@@ -547,6 +547,8 @@ body[data-screen="about"]    #screen-about{display:flex;flex-direction:column}
 .summary .legend{font-size:.72rem;color:var(--faint);margin:14px 0 0}
 .legend{font-size:.74rem;color:var(--faint);margin:10px 0 0}
 .legend .badge{position:static;display:inline;font-size:.68rem;padding:2px 7px}
+.legend .last{display:inline-block;padding:3px 9px;border-radius:99px;
+  background:rgba(255,255,255,.07);border:1px solid var(--edge-soft)}
 
 /* ═══════════════ about screen ═══════════════ */
 a{color:var(--teal);text-decoration:none;font-weight:700}
@@ -606,6 +608,35 @@ body[data-kwizzy="boot"] .app{visibility:hidden}
 .toast[hidden]{display:none}
 .toast.show{animation:toastIn .34s cubic-bezier(.2,1.3,.4,1) both}
 @keyframes toastIn{from{opacity:0;transform:translateY(18px) scale(.96)}to{opacity:1;transform:none}}
+
+/* ═══════════════ Last Time (mem.t question ids, mem.s origin keys) ═══════════════
+   A stamp is words first, colour second: absent = never played, and that is said in
+   words too ("never played here", "First time this Origin is played."). A .today
+   variant only warms a stamp that was played the same day — it never replaces the text. */
+.last,.lastq,.lastq2{
+  font-size:.7rem;font-weight:700;letter-spacing:.02em;color:var(--faint);
+  font-variant-numeric:tabular-nums;
+}
+.lastq,.lastq2{display:block;margin:5px 0 0}
+.lastq2{color:var(--dim)}
+.qrow .chips .chip.last{
+  background:rgba(255,200,106,.12);border-color:rgba(255,200,106,.4);color:var(--faint);
+  text-transform:lowercase;letter-spacing:.02em;
+}
+.qrow .chips .chip.last.today{color:var(--gold);border-color:rgba(255,200,106,.75)}
+.card .qnum .last{
+  display:inline-block;padding:3px 9px;border-radius:99px;
+  background:rgba(255,255,255,.07);border:1px solid var(--edge-soft);
+}
+.last.today,.lastq.today,.lastq2.today{
+  color:var(--gold);border:1px solid rgba(255,200,106,.42);
+  background:rgba(255,200,106,.14);border-radius:99px;padding:2px 8px;
+}
+.hud .last{font-size:.72rem;color:var(--faint)}
+.hud .last.never{color:var(--violet);text-transform:uppercase;letter-spacing:.06em}
+.hud .last.today{color:var(--gold)}
+.summary .last{font-size:.82rem;color:var(--dim);margin:9px 0 0}
+.summary .last.today{color:var(--gold);text-shadow:0 0 14px rgba(255,200,106,.5)}
 
 /* safe areas for notched phones */
 @supports (padding:max(0px)){

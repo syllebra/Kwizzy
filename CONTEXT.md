@@ -35,6 +35,10 @@ browser. Drives the "Answered before" badge and the fresh-first draw.
 **Origin** — what a play session was started from, and the unit a Best Score is kept against.
 Either a **Source Quiz** (one Quiz) or a **Custom Quiz** (a Level, plus an optional Category).
 
+**Last Time** — when something was last played, remembered in the browser: per Question and per Origin.
+Absent means never played, and that absence is the signal — a quiz, Category or Question with no
+"Last played" stamp has never been played. A Category shows the most recent visit inside it.
+
 ## Playing
 
 **Custom Quiz** — a play session of 20 Questions drawn from the Corpus by Level and optional

@@ -11,7 +11,9 @@ Pure static site — `index.html` + `app.js` + `style.css` + `corpus.json` (slim
 `media/` (132 question images plus the title logo, 5.8 MB). No server, no build, no dependencies,
 no account: all player memory (the Answered Set of question ids, the best Scores per Source Quiz
 and per Custom Quiz Level/Category) lives in `localStorage` of your browser. Nothing is sent
-anywhere.
+anywhere. Memory also keeps the **Last Time** of every Question and every Origin, and shows it — on
+the Category cards, the quiz rows, the score line, each question card and the summary — so a missing
+"Last played" stamp means never played.
 
 The interface is a set of full-viewport **Screens** — the player is on exactly one at a time:
 
