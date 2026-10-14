@@ -288,6 +288,16 @@ function burstAt(node, n) {
 }
 
 // A short screen-level thump, for correct/incorrect feedback.
+/* Haptic feedback (Vibration API): Android Chrome/Samsung/Opera pulse the phone, iOS Safari
+   and Firefox 129+ do not implement it at all (navigator.vibrate absent, or returns false) —
+   there the visual animations stay the whole feedback. Also silent under reduceMotion. */
+function haptic(pattern) {
+  if (reduceMotion) return;
+  try {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+  } catch (e) {}
+}
+
 function thump(el, cls) {
   if (!el || reduceMotion) return;
   el.classList.remove(cls);
@@ -717,6 +727,9 @@ function gradeCard(card, slot) {
   }
   card.className = "glass card answered";
 
+  // haptics: one clean buzz when the answer is right, a triple-tap buzz when it is wrong
+  haptic(ok ? 60 : [25, 40, 25]);
+
   // juice: burst on the correct option, extra sparks when the player got it
   for (var b = 0; b < kids.length; b++) {
     if (parseInt(kids[b].dataset.slot, 10) === right) {
@@ -778,6 +791,7 @@ function askCard(card) {
         else kids[i].classList.remove("sel");
       }
       thump(t, "selPop");
+      haptic(20);   // selecting is only a tap: one very short, subtle pulse
       if (!confirm) {
         confirm = mk("button", "btn press validate", "");
         add(confirm, mk("span", "btn-label", "Validate"));
