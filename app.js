@@ -43,10 +43,13 @@ var session = null;
 var SCREENS = ["title", "choice", "cats", "play", "about"];
 var screen = "title";
 
-/* Back-key navigation: where "back" goes is derived from the SCREEN YOU ARE ON, so it
-   works even where the markup hard-wires an arrow to one fixed screen (the cats arrow
-   says "title" but from Random 20 you came from the Choice screen — the key knows). */
-var backTarget = { title: null, choice: "title", cats: "choice", play: "choice", about: "title" };
+/* Back navigation: where "back" goes is kept IDENTICAL to what each screen's own arrow
+   declares in the markup (data-back), so the Back key and the arrow can never disagree.
+   Every screen goes back to the MAIN MENU — except Play, which steps out to the Menu.
+   (Chaining cats -> choice was wrong: the Categories screen shows the difficulty pill,
+   so tapping back there dropped the player on the difficulty screen again instead of
+   the main menu.) */
+var backKey = { title: null, choice: "title", cats: "title", about: "title", play: "choice" };
 var backArmed = false, backArmedT = 0;
 var SCREENNAME = { title: "the Title", choice: "the Menu", cats: "the Categories", play: "Play", about: "the Credits" };
 
@@ -54,8 +57,10 @@ function inPlay() {
   return !!session && session.answered < session.total;
 }
 
-function goBack() {
-  var dest = backTarget[screen];
+function goBack(dest) {
+  // dest comes from the arrow that was tapped (its data-back) or from backKey for the
+  // Back key — one destination per screen, no chaining back through the Menu.
+  if (!dest) dest = backKey[screen];
   if (!dest) { toast("You are on the Title screen already."); return; }
   if (screen === "play" && inPlay()) {
     // A quiz is running: leaving it loses the score, so a tap only ARM the exit.
@@ -77,10 +82,9 @@ function goBack() {
     if (backArmedT) { clearTimeout(backArmedT); backArmedT = 0; }
     disarmHud();
   }
-  var prev = screen;
   leavePlay();
   show(dest);
-  toast("Back to " + SCREENNAME[dest] + " · tap again to go back further.");
+  toast("Back to " + SCREENNAME[dest] + ".");
 }
 
 // The armed confirmation, drawn on the Play HUD (sticky, always visible while playing).
@@ -313,15 +317,9 @@ function wirePress(root) {
        chips, skip, options — and any button added later) gets a subtle 20 ms pulse.
        wirePress(document) is wired at boot, so future screens inherit it for free. */
     var b = ev.target && ev.target.closest ? ev.target.closest("button") : null;
-    if (b && !b.disabled) {
-      /* One TASK LATER, not synchronously: Chrome blocks navigator.vibrate() until a
-         user gesture has been COMMITTED to the frame (the click that carries this very
-         tap only commits when its handler returns). A synchronous call is therefore
-         swallowed on the first tap of a session — which is exactly why PLAY and the
-         credits button felt dead on a fresh page. Deferred, the gesture is already in
-         when the pulse fires. */
-      setTimeout(function () { haptic(20); }, 0);
-    }
+    if (b && !b.disabled) haptic(20);   // haptic() retries itself until the browser grants
+                                        // the pulse, so the first buttons of a session buzz
+                                        // too (see the comment above haptic)
     var t = ev.target && ev.target.closest ? ev.target.closest(".press, .opt, .catcard, .fchip, .mode-card, .iconbtn") : null;
     if (!t || t.disabled) return;
     t.classList.remove("shake");
@@ -370,9 +368,30 @@ function burstAt(node, n) {
    there the visual animations stay the whole feedback. Also silent under reduceMotion. */
 function haptic(pattern) {
   if (reduceMotion) return;
-  try {
-    if (navigator.vibrate) navigator.vibrate(pattern);
-  } catch (e) {}
+  var vibrate = null;
+  try { vibrate = navigator.vibrate; } catch (e) { return; }
+  if (!vibrate) return;                       // absent: iOS Safari, Firefox — stay silent
+
+  /* vibrate() returns FALSE when the browser refuses the pulse: the spec (and Chrome)
+     require a user gesture COMMITTED to the frame first, and the gesture carried by THIS
+     very tap only commits once the handler returns — so the first buttons of a session
+     (the Title's PLAY and Credits, the first difficulty chip) get refused and never buzz.
+     The return value says so, therefore RETRY on later tasks until it reports true: each
+     retry runs after the previous handler returned, so the gesture is committed by then.
+     A browser that grants the pulse immediately returns true and pulses on attempt one,
+     so nothing extra is felt there. */
+  var tries = 0;
+  (function attempt() {
+    var r = null;
+    try { r = vibrate(pattern); } catch (e) { return; }
+    // Only an EXPLICIT false means "refused" — a truthy or undefined return (some engines
+    // return nothing at all) is treated as "it fired", otherwise those would buzz 4 times.
+    if (r !== false) return;
+    if (tries >= 3) return;                   // never granted (Silent mode, no motor): quiet
+    var wait = [40, 90, 160][tries];
+    tries++;
+    setTimeout(attempt, wait);
+  })();
 }
 
 function thump(el, cls) {
@@ -738,7 +757,7 @@ function buildHud(meta) {
   var bk = mk("button", "iconbtn press", "");
   bk.innerHTML = "&larr;";
   bk.setAttribute("aria-label", "Back");
-  bk.addEventListener("click", function () { goBack(); });
+  bk.addEventListener("click", function () { goBack("choice"); });   // Play steps out to the Menu
   add(hud, bk);
   return hud;
 }
@@ -1259,12 +1278,14 @@ function wireScreens() {
   document.getElementById("btn-start").addEventListener("click", function () { show("choice"); });
   document.getElementById("btn-about").addEventListener("click", function () { show("about"); });
 
-  // Back arrows — and the Back KEY, both routed through goBack(), which knows where
-  // back goes from the CURRENT screen and asks for confirmation while a quiz is on.
+  // Back arrows — and the Back KEY, both routed through goBack(). An arrow passes its own
+  // data-back (so Categories returns to the MAIN MENU, not back through the difficulty
+  // panel), the key passes backKey[screen], which mirrors those markup values. Both ask
+  // for a second tap while a quiz is on (the confirmation).
   var backs = document.querySelectorAll("[data-back]");
   for (var b = 0; b < backs.length; b++) {
     (function (btn) {
-      btn.addEventListener("click", function () { goBack(); });
+      btn.addEventListener("click", function () { goBack(btn.dataset.back); });
     })(backs[b]);
   }
   // The BACK KEY. Escape and Backspace are the two keys a browser actually reports;
@@ -1278,7 +1299,7 @@ function wireScreens() {
     if (!isBack) return;
     ev.preventDefault();
     haptic(40);
-    goBack();
+    goBack(backKey[screen]);
   });
 
   // Difficulty chips: one selection at a time, mirrored into chosenLvl.
