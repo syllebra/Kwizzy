@@ -150,6 +150,21 @@ body[data-screen="about"]    #screen-about{display:flex;flex-direction:column}
   font-size:.95rem;font-weight:800;letter-spacing:.01em;
   text-shadow:0 0 14px rgba(53,226,210,.35);
 }
+/* Back ARMED, on the Play HUD (the Play screen has no back arrow — the sticky HUD is the
+   always-visible place for it). Gold, pulsing, until the exit is confirmed or times out. */
+.hud.armed{border-bottom:1.5px solid rgba(255,200,106,.55)}
+/* The Play HUD's own back button (the other screens keep their topbar arrows). */
+.hud .iconbtn{margin:6px auto 0}
+.hud .iconbtn:active{transform:scale(.92)}
+.hud .arm{
+  display:block;margin:8px auto 0;padding:5px 12px;width:max(46%,220px);
+  font-size:.8rem;font-weight:850;letter-spacing:.02em;color:var(--gold);
+  background:rgba(255,200,106,.14);border:1px solid rgba(255,200,106,.5);border-radius:10px;
+  text-shadow:0 0 12px rgba(255,200,106,.5);
+  animation:armBeat 1.05s ease-in-out infinite;
+}
+@keyframes armBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+
 .iconbtn{
   flex:0 0 auto;width:44px;height:44px;border-radius:14px;
   display:inline-flex;align-items:center;justify-content:center;

@@ -61,19 +61,40 @@ function goBack() {
     // A quiz is running: leaving it loses the score, so a tap only ARM the exit.
     if (!backArmed) {
       backArmed = true;
+      // The Play screen has NO back arrow, so the armed state lives in its sticky HUD:
+      // a gold line that pulses until the exit is confirmed (or times out).
+      armHud();
       toast("A quiz is in progress (" + session.answered + " of " + session.total +
         " answered) — tap back AGAIN to leave it; an unfinished run is not scored.");
       if (backArmedT) clearTimeout(backArmedT);
-      backArmedT = setTimeout(function () { backArmed = false; backArmedT = 0; }, 6000);
+      backArmedT = setTimeout(function () {
+        backArmed = false; backArmedT = 0;
+        disarmHud();
+      }, 6000);
       return;
     }
     backArmed = false;
     if (backArmedT) { clearTimeout(backArmedT); backArmedT = 0; }
+    disarmHud();
   }
   var prev = screen;
   leavePlay();
   show(dest);
   toast("Back to " + SCREENNAME[dest] + " · tap again to go back further.");
+}
+
+// The armed confirmation, drawn on the Play HUD (sticky, always visible while playing).
+function armHud() {
+  if (!hud) return;
+  hud.classList.add("armed");
+  if (hud.querySelector(".arm")) return;
+  add(hud, mk("div", "arm", "Back ARMED \u2014 tap \u2190 again to leave the quiz"));
+}
+function disarmHud() {
+  if (!hud) return;
+  hud.classList.remove("armed");
+  var arm = hud.querySelector(".arm");
+  if (arm) hud.removeChild(arm);
 }
 
 function leavePlay() {
@@ -708,6 +729,17 @@ function buildHud(meta) {
     mk("span", "last" + (lastSeen ? (sameDay(lastSeen) ? " today" : "") : " never"),
        lastSeen ? "Last played " + absDate(lastSeen) : "never played here"));
   add(hud, line);
+
+  // A BACK affordance on the Play screen: the markup arrows live in the other screens'
+  // topbars, and while a quiz runs there is nothing to tap. The HUD is sticky and always
+  // visible, so the button lives there — and it goes through goBack(), which asks for a
+  // second tap while the quiz is still in progress (the confirmation the user asked for).
+  // Built per session, so it wires itself here rather than waiting on wireScreens().
+  var bk = mk("button", "iconbtn press", "");
+  bk.innerHTML = "&larr;";
+  bk.setAttribute("aria-label", "Back");
+  bk.addEventListener("click", function () { goBack(); });
+  add(hud, bk);
   return hud;
 }
 function updateHud() {
@@ -1235,8 +1267,15 @@ function wireScreens() {
       btn.addEventListener("click", function () { goBack(); });
     })(backs[b]);
   }
+  // The BACK KEY. Escape and Backspace are the two keys a browser actually reports;
+  // keyCode 4 is Android's legacy KEYCODE_BACK, kept because the user asked for the
+  // hardware "back" button — but modern Android (12+) replaced that button with gesture
+  // navigation, so it may never arrive. The on-screen back arrow is the reliable path
+  // and shares this exact same goBack() behaviour, confirmation included.
   window.addEventListener("keydown", function (ev) {
-    if (ev.key !== "Escape" && ev.key !== "Backspace") return;
+    var isBack = ev.key === "Escape" || ev.key === "Backspace" ||
+      ev.code === "Escape" || ev.code === "Backspace" || ev.keyCode === 4;
+    if (!isBack) return;
     ev.preventDefault();
     haptic(40);
     goBack();
