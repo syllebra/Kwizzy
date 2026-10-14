@@ -298,17 +298,24 @@ function thump(el, cls) {
 
 
 /* ---------- loader ---------- */
-var loader = null, loaderFill = null, loaderNote = null, loaderPct = null;
+var loader = null, loaderRing = null, loaderNote = null, loaderPct = null;
+var RING = 251.33;   // circumference of the gauge circle (r=40 in a 100-unit viewBox)
 
 function initLoader() {
   loader = document.getElementById("loader");
-  loaderFill = loader.querySelector(".loader-bar i");
+  loaderRing = loader.querySelector(".ring-fill");
   loaderNote = loader.querySelector(".loader-note");
   loaderPct = mk("p", "loader-pct");
   loader.appendChild(loaderPct);
 }
+// The gauge is swept by the real streamed bytes: frac is got/total, so the ring is a
+// measurement, not a spinner pretending to know something (ADR 0004).
 function setProgress(frac, label) {
-  if (loaderFill) loaderFill.style.width = Math.max(0, Math.min(100, frac * 100)).toFixed(1) + "%";
+  frac = Math.max(0, Math.min(1, frac));
+  if (loaderRing) {
+    loaderRing.style["stroke-dasharray"] = RING + " " + RING;
+    loaderRing.style["stroke-dashoffset"] = (RING * (1 - frac)).toFixed(2);
+  }
   if (loaderPct) loaderPct.textContent = label;
 }
 
@@ -326,7 +333,7 @@ function loadCorpus() {
       var now = Date.now();
       if (!force && now - lastPaint < 90) return;
       lastPaint = now;
-      if (total > 0) setProgress(got / total, fmtBytes(got) + " / " + fmtBytes(total));
+      if (total > 0) setProgress(got / total, Math.round(100 * got / total) + "% · " + fmtBytes(got));
       else setProgress(Math.min(0.96, 0.05 + 0.9 * (now - t0) / 6000), fmtBytes(got));
     }
 
@@ -353,12 +360,13 @@ function loadCorpus() {
 }
 
 function finishDecode(chunks, got, t0) {
-  setProgress(1, fmtBytes(got) + " received");
+  setProgress(1, "100% · " + fmtBytes(got));
   if (loaderNote) loaderNote.textContent = "Decoding and indexing…";
   var text = new TextDecoder("utf-8").decode(joinBytes(chunks));
   var parsed = JSON.parse(text);
   var ms = Date.now() - t0;
   if (loaderNote) loaderNote.textContent = "Corpus ready in " + (ms / 1000).toFixed(1) + " s";
+  if (loaderPct) loaderPct.textContent = "100%";
   return parsed;
 }
 
@@ -1085,7 +1093,11 @@ function onCorpus(payload) {
   renderCatChips();
   document.getElementById("stat-quizzes").textContent = String(QUIZ.length);
   document.getElementById("stat-questions").textContent = String(Q.length);
+  // The gauge is full, so it fires: the ring's own beat before the app takes over.
   document.body.dataset.kwizzy = "ready";
+  // The gauge is full, so it fires. After "ready": the burst layer lives inside .app,
+  // which is hidden while booting, so sparks fired before now would be invisible.
+  if (loader) burstAt(loader.querySelector(".loader-gauge"), 20);
   var start = document.getElementById("btn-start");
   if (start) start.disabled = false;
 }

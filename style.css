@@ -98,6 +98,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
     animation-duration:.001ms!important;animation-iteration-count:1!important;
     transition-duration:.001ms!important;scroll-behavior:auto!important;
   }
+  /* the gauge stays a gauge: the ring keeps its dashoffset (the bytes read so far),
+     only the motion is gone. */
+  .loader-gauge svg{transform:rotate(-90deg)}
+  .loader-halo{animation:none;opacity:.7}
+  .loader{animation:none;transform:translate(-50%,-50%)}
 }
 
 /* ═══════════════ screenshot-free screen router ═══════════════ */
@@ -563,29 +568,66 @@ a:hover{text-decoration:underline;text-shadow:0 0 12px rgba(53,226,210,.5)}
 .fine{font-size:.76rem;color:var(--faint);margin:0}
 .memory-tools{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 0}
 
-/* ═══════════════ loader ═══════════════ */
+/* ═══════════════ loader — a round game card with a real-progress gauge ═══════════════
+   The card is centred by translate(-50%,-50%), so its entrance keyframes must carry that
+   SAME transform: a keyframe ending at transform:none (popIn) used to wipe it and push the
+   card off-centre by half its own size. Never reuse popIn here. */
 .loader{
-  position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
-  width:min(88vw,380px);z-index:80;
-  padding:26px 22px;border-radius:var(--r);text-align:center;
-  background:rgba(8,10,22,.86);border:1.5px solid var(--edge);
+  position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:80;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:min(78vw,300px);min-height:min(78vw,300px);
+  padding:18px 14px;border-radius:64px;text-align:center;
+  background:rgba(8,10,22,.9);border:1.5px solid var(--edge);
   -webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);
-  box-shadow:var(--shadow),0 0 40px rgba(53,226,210,.18);
-  animation:popIn .4s cubic-bezier(.2,.9,.25,1.05) both;
+  box-shadow:var(--shadow),0 0 46px rgba(53,226,210,.22);
+  animation:loaderIn .42s cubic-bezier(.2,.9,.25,1.05) both;
 }
+@keyframes loaderIn{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.82) rotate(-2deg)}
+  60%{opacity:1;transform:translate(-50%,-50%) scale(1.04) rotate(.6deg)}
+  to{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(0deg)}
+}
+/* The gauge: a ring swept by the real bytes streamed, starting at 12 o'clock. */
+.loader-gauge{
+  position:relative;width:min(52vw,168px);height:min(52vw,168px);margin:0 0 12px;
+}
+/* The ring does NOT spin: the arc is a measurement of the bytes streamed, so its origin
+   stays at 12 o'clock — a spinning arc would make the reading drift. The sweep itself is
+   the motion. */
+.loader-gauge svg{display:block;width:100%;height:100%;transform:rotate(-90deg)}
+.loader-gauge circle{stroke-width:8;stroke-linecap:round}
+.ring-track{stroke:rgba(255,255,255,.10)}
+.ring-fill{
+  stroke:url(#ringgrad);stroke-dasharray:251.33;stroke-dashoffset:251.33;
+  transition:stroke-dashoffset .2s linear;
+  filter:drop-shadow(0 0 6px rgba(53,226,210,.85));
+}
+/* The glyph sits in the eye of the gauge, so the ring reads as charging it. */
 .loader-glyph{
-  font-size:2.8rem;font-weight:900;line-height:1;margin:0 0 16px;
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-size:2.6rem;font-weight:900;line-height:1;
   background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;
   animation:glyphBob 1.5s ease-in-out infinite;
 }
-@keyframes glyphBob{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-8px) rotate(4deg)}}
-.loader-bar{height:12px;border-radius:99px;background:rgba(255,255,255,.10);border:1px solid var(--edge-soft);overflow:hidden}
-.loader-bar i{
-  display:block;height:100%;width:0%;border-radius:99px;background:var(--grad);
-  box-shadow:0 0 16px rgba(53,226,210,.7);transition:width .2s linear;
+@keyframes glyphBob{
+  0%,100%{transform:translate(-50%,-50%) scale(1) rotate(-5deg)}
+  50%{transform:translate(-50%,-52%) scale(1.12) rotate(5deg)}
 }
-.loader-note{font-size:.8rem;color:var(--dim);margin:14px 0 0}
-.loader-pct{font-size:.78rem;color:var(--teal);margin:8px 0 0;font-variant-numeric:tabular-nums;font-weight:800}
+.loader-halo{
+  position:absolute;left:50%;top:50%;width:min(72vw,236px);height:min(72vw,236px);
+  transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(53,226,210,.24),rgba(168,104,255,.12) 62%,transparent 78%);
+  animation:haloPulse 2.2s ease-in-out infinite;
+}
+@keyframes haloPulse{
+  0%,100%{opacity:.5;transform:translate(-50%,-50%) scale(.9)}
+  50%{opacity:1;transform:translate(-50%,-50%) scale(1.08)}
+}
+.loader-note{font-size:.8rem;color:var(--dim);margin:0 0 0 0}
+.loader-pct{
+  font-size:.82rem;color:var(--teal);margin:10px 0 0;font-variant-numeric:tabular-nums;font-weight:800;
+  letter-spacing:.03em;
+}
 body:not([data-kwizzy="boot"]) .loader{display:none}
 body[data-kwizzy="boot"] .app{visibility:hidden}
 
