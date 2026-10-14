@@ -486,16 +486,41 @@ body[data-screen="about"]    #screen-about{display:flex;flex-direction:column}
 .opt.right{
   background:linear-gradient(118deg,rgba(62,232,169,.26),rgba(53,226,210,.18));
   border-color:rgba(62,232,169,.7);box-shadow:0 0 24px rgba(62,232,169,.4);
-  animation:rightPop .5s cubic-bezier(.2,1.4,.4,1) both;
+  animation:rightPop .52s cubic-bezier(.2,1.5,.4,1) both,goodGlow 1.05s .16s ease-out both;
 }
 .opt.right .k{color:var(--good)}
-@keyframes rightPop{0%{transform:scale(1)}45%{transform:scale(1.05)}100%{transform:scale(1)}}
+@keyframes rightPop{0%{transform:scale(1)}45%{transform:scale(1.07)}100%{transform:scale(1)}}
+/* GOOD answer: a halo that swells then settles, plus a ring thrown outward. ::after is
+   free: no .opt pseudo is used anywhere else in style.css. */
+@keyframes goodGlow{
+  0%{box-shadow:0 0 8px rgba(62,232,169,.2)}
+  42%{box-shadow:0 0 40px rgba(62,232,169,.66)}
+  100%{box-shadow:0 0 18px rgba(62,232,169,.34)}
+}
+.card .opt.right::after{
+  content:"";position:absolute;inset:-5px;border-radius:20px;pointer-events:none;
+  border:2px solid rgba(62,232,169,.8);
+  animation:goodRing .66s cubic-bezier(.2,.9,.3,1) both;
+}
+@keyframes goodRing{0%{opacity:0;transform:scale(.88)}32%{opacity:.95}100%{opacity:0;transform:scale(1.18)}}
+/* BAS answer: the tile flashes red under the shake, and a ring collapses INWARD onto it */
 .opt.wrong{
   background:rgba(255,111,128,.16);border-color:rgba(255,111,128,.6);
   text-decoration:line-through;text-decoration-color:rgba(255,111,128,.75);
-  animation:shake .42s cubic-bezier(.36,.07,.19,.97) both;
+  animation:shake .42s cubic-bezier(.36,.07,.19,.97) both,badFlash .52s ease-out both;
 }
 .opt.wrong .k{color:var(--bad)}
+@keyframes badFlash{
+  0%{background-color:rgba(255,111,128,.42);box-shadow:0 0 26px rgba(255,111,128,.6)}
+  48%{background-color:rgba(255,111,128,.06);box-shadow:0 0 4px rgba(255,111,128,.1)}
+  100%{background-color:rgba(255,111,128,.16);box-shadow:0 0 10px rgba(255,111,128,.3)}
+}
+.card .opt.wrong::after{
+  content:"";position:absolute;inset:-4px;border-radius:19px;pointer-events:none;
+  border:2px solid rgba(255,111,128,.75);
+  animation:badRing .5s cubic-bezier(.2,.9,.3,1) both;
+}
+@keyframes badRing{0%{opacity:.9;transform:scale(1.14)}60%{opacity:.25}100%{opacity:0;transform:scale(.9)}}
 .opt.dim{opacity:.45}
 .card .opt.sel{
   background:rgba(79,216,255,.20);border-color:rgba(79,216,255,.85);
@@ -509,11 +534,14 @@ body[data-screen="about"]    #screen-about{display:flex;flex-direction:column}
 /* Selection is not validation: tapping an option only paints it blue (selPop), and the
    Validate button under the options is what grades the pick. */
 .card .validate{
-  width:max(52%,150px);margin:12px 0 0;justify-content:center;
+  /* flex (not the .btn inline-flex) + auto side margins => dead centre of the card,
+     in BOTH the grid and the one-per-row option layout. */
+  display:flex;width:max(52%,150px);margin:12px auto 0;justify-content:center;
   border-color:rgba(79,216,255,.5);box-shadow:0 10px 24px rgba(79,216,255,.22);
   animation:validateBeat 1.6s ease-in-out infinite;
 }
 .card .validate .btn-label{text-transform:uppercase;letter-spacing:.05em}
+.card .validate:active{transform:scale(.94)}
 @keyframes validateBeat{
   0%,100%{transform:scale(1);box-shadow:0 10px 24px rgba(79,216,255,.2)}
   50%{transform:scale(1.035);box-shadow:0 12px 30px rgba(79,216,255,.38)}
@@ -529,7 +557,8 @@ body[data-screen="about"]    #screen-about{display:flex;flex-direction:column}
   animation:rise .38s cubic-bezier(.2,.9,.25,1) both;
 }
 @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-.card .ans .verdict{font-weight:900;font-size:.82rem;letter-spacing:.05em;text-transform:uppercase;margin:0 0 7px}
+.card .ans .verdict{font-weight:900;font-size:.82rem;letter-spacing:.05em;text-transform:uppercase;margin:0 0 7px;animation:stampIn .4s cubic-bezier(.2,1.5,.4,1) both}
+@keyframes stampIn{0%{opacity:0;transform:scale(.7) translateY(-6px)}55%{transform:scale(1.08)}100%{opacity:1;transform:none}}
 .card .ans .verdict.ok{color:var(--good);text-shadow:0 0 14px rgba(62,232,169,.6)}
 .card .ans .verdict.ko{color:var(--bad);text-shadow:0 0 14px rgba(255,111,128,.55)}
 .card .ans .expl{
