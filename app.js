@@ -10,6 +10,10 @@
 (function () {
 "use strict";
 
+/* Memory shape (see ADR 0005): localStorage kwizzy.v1 = {a, b, t, s} —
+   a: question id -> 1 (Answered Set), b: Origin key -> [score, total] (Best Score),
+   t: question id -> epoch ms (Last Time of a Question),
+   s: Origin key  -> epoch ms (Last Time of an Origin: q:<quizIdx> / c:<lvl> / c:<lvl>|<cat>). */
 var REVEAL_MS = 2500;
 var CUSTOM_N = 20;
 var LS_KEY = "kwizzy.v1";
