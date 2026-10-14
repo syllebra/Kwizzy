@@ -54,7 +54,9 @@ and `difficile` are offered as a Difficulty; `test` is reachable only by playing
 carries it.
 
 **Filter** — a narrowing of what is offered when picking a Source Quiz, by Source, by Level, or by
-Category. Filters never exclude a Question from a Custom Quiz.
+Category. Filters never exclude a Question from a Custom Quiz. The Level filters start from the
+Difficulty picked on the Choice Screen — only it is on — and the player can toggle any of them back
+on; Test and Unleveled start on, since neither is a Difficulty a player can pick.
 
 ## Screens
 

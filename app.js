@@ -233,6 +233,9 @@ function onScreenShown(name) {
       if (pill) pill.textContent = chosenLvl >= 0 ? lvlLabel(chosenLvl) : "—";
     } else {
       renderFilters();
+      applyChosenLevel();
+      var fp = document.getElementById("filters-lvl-pill");
+      if (fp) fp.textContent = " — " + lvlLabel(chosenLvl);
       renderGrid();
     }
   }
@@ -411,6 +414,8 @@ function quizMatches(qi) {
 /* ---------- landing ---------- */
 var gridEl = null, sheetSlot = null, filtersEl = null, catChipsEl = null;
 
+var lvlFchips = [];   // the Levels filter chips, in slot order (0..3 levels, 4 = Unleveled)
+
 function renderFilters() {
   if (filtersEl) return;
   filtersEl = document.getElementById("filters");
@@ -426,9 +431,30 @@ function renderFilters() {
       var c = mk("button", "fchip " + (g ? "lvl" : "src"), groups[g].names[k]);
       c.dataset.on = "1";
       bindToggle(c, arr, k);
+      if (g) lvlFchips.push(c);
       add(box, c);
     }
     add(filtersEl, box);
+  }
+}
+// Said in words where the choice is echoed, so the highlight is not the only signal (ADR 0004).
+function sayChosenLevel() {
+  var t = document.getElementById("lvl-chosen");
+  if (t) t.textContent = "Difficulty chosen: " + lvlLabel(chosenLvl) + ".";
+}
+// The Difficulty picked on the Choice Screen seeds the Level filters, so the existing-quiz
+// grid only offers that Difficulty. The two Levels never offered as a Difficulty (Test,
+// Unleveled) stay on: a Quiz carrying one contradicts nothing, and switching it off would
+// make it unreachable — it is only ever reached by playing a Source Quiz that carries it
+// (see CONTEXT). The player can still toggle any Level back on or off.
+function applyChosenLevel() {
+  if (!filters || !filters.lvl || chosenLvl < 0) return;
+  var k;
+  for (k = 0; k < filters.lvl.length; k++) {
+    var unchoosable = k >= LVL.length - 1;   // Test and Unleveled
+    var on = k === chosenLvl || unchoosable;
+    filters.lvl[k] = on;
+    if (lvlFchips[k]) lvlFchips[k].dataset.on = on ? "1" : "0";
   }
 }
 function bindToggle(node_, arr, k) {
@@ -1091,6 +1117,14 @@ function wireScreens() {
     (function (chip) {
       chip.addEventListener("click", function () {
         chosenLvl = parseInt(chip.dataset.lvl, 10);
+        // Exactly one Difficulty stays lit: data-sel is what the highlight CSS keys on.
+        for (var k = 0; k < lv.children.length; k++) {
+          var o = lv.children[k];
+          if (o.dataset.sel === "1") o.removeAttribute("data-sel");
+          if (o === chip) o.removeAttribute("aria-selected");
+        }
+        chip.dataset.sel = "1";
+        sayChosenLevel();
         syncChoiceButtons();
         var el = document.getElementById("random-lvl-pill");
         if (el) el.textContent = lvlLabel(chosenLvl);

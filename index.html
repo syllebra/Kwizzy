@@ -58,7 +58,9 @@
     <div class="screen-body">
       <div class="panel">
         <h3 class="panel-h">Difficulty</h3>
-        <p class="panel-hint">Required — sets the pool Random 20 draws from.</p>
+        <p class="panel-hint">Required — sets the pool Random 20 draws from, and the Level
+          filter for an existing quiz.</p>
+        <p class="lvl-chosen" id="lvl-chosen" aria-live="polite">—</p>
         <div class="pick-level" id="pick-level" role="group" aria-label="Difficulty">
           <button class="chip lvl press" data-lvl="0"><span class="chip-in">Facile</span></button>
           <button class="chip lvl press" data-lvl="1"><span class="chip-in">Moyen</span></button>
@@ -103,7 +105,7 @@
       <!-- Existing-quiz path: filters + category grid -->
       <div id="existing-panel" hidden>
         <div class="panel">
-          <h3 class="panel-h">Filters</h3>
+          <h3 class="panel-h">Filters <span class="pill" id="filters-lvl-pill"></span></h3>
           <div class="filters" id="filters" role="group" aria-label="Filters"></div>
         </div>
         <div class="grid" id="grid"></div>
