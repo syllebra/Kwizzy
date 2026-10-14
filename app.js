@@ -35,6 +35,13 @@ var openCat = -1;
 var stage = null, hud = null, stack = null;
 var session = null;
 
+/* ---------- screens + juice state (presentation only) ---------- */
+var SCREENS = ["title", "choice", "cats", "play", "about"];
+var screen = "title";
+var chosenLvl = -1;          // Difficulty picked on the Choice screen
+var catsMode = "random";     // "random" | "existing"
+var switching = false;
+
 /* ---------- dom helpers ---------- */
 function mk(tag, cls, txt) {
   var n = document.createElement(tag);
@@ -116,9 +123,128 @@ function toast(msg) {
   if (!toastEl) toastEl = document.getElementById("toast");
   if (toastTimer) { clearTimeout(toastTimer); toastTimer = 0; }
   toastEl.hidden = false;
+  toastEl.classList.remove("show");
+  void toastEl.offsetWidth;          // restart the entrance animation
+  toastEl.classList.add("show");
   toastEl.textContent = msg;
-  toastTimer = setTimeout(function () { toastEl.hidden = true; toastTimer = 0; }, 4200);
+  toastTimer = setTimeout(function () {
+    toastEl.hidden = true;
+    toastEl.classList.remove("show");
+    toastTimer = 0;
+  }, 4200);
 }
+
+/* ---------- screen router (ADR 0001) ---------- */
+var screenEls = {};
+
+function screenEl(name) {
+  if (!screenEls[name]) screenEls[name] = document.getElementById("screen-" + name);
+  return screenEls[name];
+}
+
+function show(name, opts) {
+  if (SCREENS.indexOf(name) < 0 || switching) return;
+  var from = screenEl(screen), to = screenEl(name);
+  if (!to || from === to) { screen = name; document.body.dataset.screen = name; return; }
+
+  opts = opts || {};
+  switching = true;
+  screen = name;
+  document.body.dataset.screen = name;
+
+  // Let the incoming screen run its entrance even if it was shown before.
+  to.classList.remove("anim-out");
+  to.classList.remove("anim-in");
+  void to.offsetWidth;
+  to.classList.add("anim-in");
+  setTimeout(function () { to.classList.remove("anim-in"); }, 900);
+
+  if (from && !opts.instant && !reduceMotion) {
+    from.classList.add("anim-out");
+    setTimeout(function () {
+      from.classList.remove("anim-out");
+      switching = false;
+    }, 200);
+  } else {
+    switching = false;
+  }
+
+  try { window.scrollTo(0, 0); } catch (e) {}
+  onScreenShown(name);
+}
+
+// Screens that need to (re)build their contents when entered.
+function onScreenShown(name) {
+  if (name === "cats") {
+    document.getElementById("random-panel").hidden = catsMode !== "random";
+    document.getElementById("existing-panel").hidden = catsMode !== "existing";
+    document.getElementById("cats-title").textContent =
+      catsMode === "random" ? "Pick a category" : "Pick a quiz";
+    if (catsMode === "random") {
+      var pill = document.getElementById("random-lvl-pill");
+      if (pill) pill.textContent = chosenLvl >= 0 ? lvlLabel(chosenLvl) : "—";
+    } else {
+      renderFilters();
+      renderGrid();
+    }
+  }
+}
+
+/* ---------- juice: press shake, particle burst, screen shake ---------- */
+function wirePress(root) {
+  var r = root || document;
+  r.addEventListener("pointerdown", function (ev) {
+    var t = ev.target && ev.target.closest ? ev.target.closest(".press, .opt, .catcard, .fchip, .mode-card, .iconbtn") : null;
+    if (!t || t.disabled) return;
+    t.classList.remove("shake");
+    void t.offsetWidth;
+    t.classList.add("shake");
+    clearTimeout(t._shakeT);
+    t._shakeT = setTimeout(function () { t.classList.remove("shake"); }, 400);
+  }, { passive: true });
+}
+
+var burstEl = null;
+var BURST_COLORS = ["#35e2d2", "#8b5cf6", "#f76b9e", "#4fd8ff", "#ffc86a", "#8ef06a"];
+
+function burst(x, y, n) {
+  if (reduceMotion) return;
+  if (!burstEl) burstEl = document.getElementById("burst");
+  if (!burstEl) return;
+  n = n || 16;
+  for (var i = 0; i < n; i++) {
+    var s = document.createElement("i");
+    s.className = "spark";
+    var ang = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+    var dist = 42 + Math.random() * 78;
+    s.style.left = x + "px";
+    s.style.top = y + "px";
+    s.style.background = BURST_COLORS[i % BURST_COLORS.length];
+    s.style.setProperty("--dx", (Math.cos(ang) * dist).toFixed(1) + "px");
+    s.style.setProperty("--dy", (Math.sin(ang) * dist).toFixed(1) + "px");
+    s.style.setProperty("--rot", (Math.random() * 520 - 260).toFixed(0) + "deg");
+    s.style.setProperty("--dur", (620 + Math.random() * 380).toFixed(0) + "ms");
+    s.style.width = s.style.height = (5 + Math.random() * 7).toFixed(1) + "px";
+    burstEl.appendChild(s);
+    (function (el) { setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 1100); })(s);
+  }
+}
+
+function burstAt(node, n) {
+  if (!node || !node.getBoundingClientRect) return;
+  var r = node.getBoundingClientRect();
+  burst(r.left + r.width / 2, r.top + r.height / 2, n);
+}
+
+// A short screen-level thump, for correct/incorrect feedback.
+function thump(el, cls) {
+  if (!el || reduceMotion) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  setTimeout(function () { el.classList.remove(cls); }, 520);
+}
+
 
 /* ---------- loader ---------- */
 var loader = null, loaderFill = null, loaderNote = null, loaderPct = null;
@@ -268,7 +394,13 @@ function bindToggle(node_, arr, k) {
 function renderGrid() {
   if (!gridEl) gridEl = document.getElementById("grid");
   if (!sheetSlot) sheetSlot = document.getElementById("sheet-slot");
+  if (!gridEl || !sheetSlot) return;
+  // The slot can live inside the grid (under the opened card). Rescue it before
+  // wiping the grid, or innerHTML="" would delete it for good.
+  if (sheetSlot.parentNode === gridEl) gridEl.parentNode.insertBefore(sheetSlot, gridEl);
   gridEl.innerHTML = "";
+  sheetSlot.innerHTML = "";
+  openCat = -1;
   var shown = 0;
   for (var ci = 0; ci < CATS.length; ci++) {
     var list = catQuizzes[ci];
@@ -298,11 +430,11 @@ function renderGrid() {
     shown++;
   }
   if (!shown) add(gridEl, mk("p", "hint", "No category matches the current filters."));
-  if (openCat >= 0) { openCat = -1; if (sheetSlot) sheetSlot.innerHTML = ""; }
 }
 
 function renderCatChips() {
   if (!catChipsEl) catChipsEl = document.getElementById("cat-chips");
+  if (!catChipsEl) return;
   catChipsEl.innerHTML = "";
   var order = [];
   for (var o = 0; o < CATS.length; o++) order.push(o);
@@ -330,9 +462,9 @@ function toggleSheet(catIdx) {
   if (openCat === catIdx) {
     sheetSlot.innerHTML = "";
     openCat = -1;
+    resetCatCards();
     return;
   }
-  sheetSlot.innerHTML = "";
   openCat = catIdx;
   var list = [];
   var src = catQuizzes[catIdx];
@@ -349,19 +481,46 @@ function toggleSheet(catIdx) {
     if (qz[2] >= 0) add(chips, mk("span", "chip lvl", lvlLabel(qz[2])));
     add(chips, mk("span", "chip src", SRC_LABEL[SRC[qz[3]]]));
     add(row, chips, mk("span", "n", qByQuiz[qi].length + " q"));
-    var play = mk("button", "btn", "Play");
+    var play = mk("button", "btn press", "");
+    add(play, mk("span", "btn-label", "Play"));
     play.dataset.quiz = String(qi);
     bindPlay(play);
     add(row, play);
     add(sheet, row);
   }
-  var close = mk("button", "btn", "Close ▴");
+  var close = mk("button", "btn press", "");
+  add(close, mk("span", "btn-label", "Close ▴"));
   close.addEventListener("click", function () {
     sheetSlot.innerHTML = "";
     openCat = -1;
+    resetCatCards();
   });
   add(sheet, close);
+
+  // Place the sheet directly beneath the card that was opened, not after the whole grid.
+  var cards = gridEl.children;
+  var anchor = null;
+  for (var c = 0; c < cards.length; c++) {
+    if (cards[c].dataset.cat === String(catIdx)) { anchor = cards[c]; break; }
+  }
+  sheetSlot.innerHTML = "";
   add(sheetSlot, sheet);
+  if (anchor && anchor.parentNode === gridEl) {
+    gridEl.insertBefore(sheetSlot, anchor.nextSibling);
+  } else {
+    add(gridEl, sheetSlot);
+  }
+}
+
+function resetCatCards() {
+  if (!gridEl) return;
+  var all = gridEl.children;
+  for (var k = 0; k < all.length; k++) {
+    if (all[k].dataset.cat) {
+      all[k].className = (openCat === parseInt(all[k].dataset.cat, 10))
+        ? "glass catcard open" : "glass catcard";
+    }
+  }
 }
 function bindPlay(btn) {
   btn.addEventListener("click", function () {
@@ -388,10 +547,12 @@ function buildHud(meta) {
   return hud;
 }
 function updateHud() {
-  hud.querySelector(".sc").textContent = session.score + " / " + session.total;
+  var sc = hud.querySelector(".sc");
+  sc.textContent = session.score + " / " + session.total;
   hud.querySelector(".pct").textContent = pct(session.score, session.total) + "%";
   hud.querySelector(".bar i").style.width =
     Math.round((session.answered / session.total) * 100) + "%";
+  thump(sc, "bump");
 }
 
 /* ---------- cards ---------- */
@@ -447,6 +608,15 @@ function gradeCard(card, slot) {
     else kids[i].className = "opt dim";
   }
   card.className = "glass card answered";
+
+  // juice: burst on the correct option, extra sparks when the player got it
+  for (var b = 0; b < kids.length; b++) {
+    if (parseInt(kids[b].dataset.slot, 10) === right) {
+      (function (el) { setTimeout(function () { burstAt(el, ok ? 22 : 10); }, 60); })(kids[b]);
+      break;
+    }
+  }
+  if (!ok) thump(card, "shake");
 
   var ans = mk("div", "ans");
   add(ans, mk("div", "verdict " + (ok ? "ok" : "ko"), ok ? "Correct" : "Not quite"));
@@ -545,6 +715,7 @@ function startSession(meta, picks) {
   add(stage, buildHud(meta));
   stack = mk("div", "stack");
   add(stage, stack);
+  show("play");
   runLoop();
 }
 
@@ -582,13 +753,15 @@ function showSummary() {
     "Badge “Answered before” = this question already lives in your memory; custom quizzes avoid it first."));
 
   var acts = mk("div", "acts");
-  var again = mk("button", "btn primary", "Play again");
+  var again = mk("button", "btn primary press", "");
+  add(again, mk("span", "btn-label", "Play again"));
   again.addEventListener("click", function () {
     var m = s.meta;
     if (m.kind === "custom") { launchCustom(m.lvlIdx, m.catIdx); return; }
     startSession(m, shuffle(qByQuiz[m.quizIdx].slice()));
   });
-  var back = mk("button", "btn", "Back to library");
+  var back = mk("button", "btn press", "");
+  add(back, mk("span", "btn-label", "Back to menu"));
   back.addEventListener("click", function () {
     document.body.dataset.kwizzy = "ready";
     stage.hidden = true;
@@ -596,10 +769,18 @@ function showSummary() {
     stack = null;
     hud = null;
     session = null;
+    show("choice");
   });
   add(acts, again, back);
   add(sum, acts);
   add(stack, sum);
+
+  // juice: celebrate a good run, and burst on a new best
+  if (better) {
+    setTimeout(function () { burstAt(sum.querySelector(".big"), pct(s.score, s.total) >= 50 ? 34 : 18); }, 160);
+  } else if (pct(s.score, s.total) >= 50) {
+    setTimeout(function () { burstAt(sum.querySelector(".big"), 16); }, 160);
+  }
 }
 
 /* ---------- launchers ---------- */
@@ -646,14 +827,14 @@ function launchCustom(lvlIdx, catIdx) {
 }
 
 function startCustom() {
-  var lvlIdx = -1;
+  var lvlIdx = chosenLvl;
   var lv = document.getElementById("pick-level");
   if (lv) {
     for (var i = 0; i < lv.children.length; i++) {
       if (lv.children[i].dataset.sel === "1") { lvlIdx = parseInt(lv.children[i].dataset.lvl, 10); break; }
     }
   }
-  if (lvlIdx < 0) { toast("Pick a Level first — it is required."); return; }
+  if (lvlIdx < 0) { toast("Pick a Difficulty first — it is required."); shakeEl(document.getElementById("pick-level")); return; }
   var catIdx = -1;
   if (catChipsEl) {
     for (var j = 0; j < catChipsEl.children.length; j++) {
@@ -661,6 +842,14 @@ function startCustom() {
     }
   }
   launchCustom(lvlIdx, catIdx);
+}
+
+function shakeEl(el) {
+  if (!el || reduceMotion) return;
+  el.classList.remove("shake");
+  void el.offsetWidth;
+  el.classList.add("shake");
+  setTimeout(function () { el.classList.remove("shake"); }, 400);
 }
 
 function startSourceQuiz(qi) {
@@ -786,10 +975,77 @@ function onCorpus(payload) {
   indexCorpus();
   renderFilters();
   renderCatChips();
-  renderGrid();
   document.getElementById("stat-quizzes").textContent = String(QUIZ.length);
   document.getElementById("stat-questions").textContent = String(Q.length);
   document.body.dataset.kwizzy = "ready";
+  var start = document.getElementById("btn-start");
+  if (start) start.disabled = false;
+}
+
+function syncChoiceButtons() {
+  var has = chosenLvl >= 0;
+  var r = document.getElementById("btn-random");
+  var e = document.getElementById("btn-existing");
+  if (r) r.disabled = !has;
+  if (e) e.disabled = !has;
+}
+
+function wireScreens() {
+  // Title → Choice. Difficulty is required before either mode unlocks.
+  document.getElementById("btn-start").addEventListener("click", function () { show("choice"); });
+  document.getElementById("btn-about").addEventListener("click", function () { show("about"); });
+
+  // Back arrows.
+  var backs = document.querySelectorAll("[data-back]");
+  for (var b = 0; b < backs.length; b++) {
+    (function (btn) {
+      btn.addEventListener("click", function () { show(btn.dataset.back); });
+    })(backs[b]);
+  }
+
+  // Difficulty chips: one selection at a time, mirrored into chosenLvl.
+  var lv = document.getElementById("pick-level");
+  for (var i = 0; i < lv.children.length; i++) {
+    (function (chip) {
+      chip.addEventListener("click", function () {
+        chosenLvl = parseInt(chip.dataset.lvl, 10);
+        syncChoiceButtons();
+        var el = document.getElementById("random-lvl-pill");
+        if (el) el.textContent = lvlLabel(chosenLvl);
+        burstAt(chip, 12);
+      });
+    })(lv.children[i]);
+  }
+  syncChoiceButtons();
+
+  // Choice → Categories, in one of two modes.
+  document.getElementById("btn-random").addEventListener("click", function () {
+    if (chosenLvl < 0) { toast("Pick a Difficulty first — it is required."); shakeEl(lv); return; }
+    catsMode = "random";
+    show("cats");
+  });
+  document.getElementById("btn-existing").addEventListener("click", function () {
+    if (chosenLvl < 0) { toast("Pick a Difficulty first — it is required."); shakeEl(lv); return; }
+    catsMode = "existing";
+    show("cats");
+  });
+
+  // Random 20 launch (category is optional).
+  document.getElementById("btn-play-random").addEventListener("click", function () { startCustom(); });
+
+  // Category cards open their quiz sheet (delegated).
+  document.getElementById("grid").addEventListener("click", function (ev) {
+    if (!ev.target || !ev.target.closest) return;
+    var card = ev.target.closest("div[data-cat]");
+    if (!card) return;
+    toggleSheet(parseInt(card.dataset.cat, 10));
+    resetCatCards();
+    if (openCat >= 0 && sheetSlot && !reduceMotion) {
+      setTimeout(function () {
+        try { sheetSlot.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (e) {}
+      }, 60);
+    }
+  });
 }
 
 function boot() {
@@ -797,37 +1053,14 @@ function boot() {
   initLoader();
   wireMemoryTools();
   initNet();
+  wirePress(document);
+  wireScreens();
+  document.body.dataset.screen = "title";
 
   window.addEventListener("error", function (ev) {
     if (document.body.dataset.kwizzy !== "boot") return;
     if (loaderNote) loaderNote.textContent = "JS error: " + (ev.message || "unknown");
     if (loaderPct) loaderPct.textContent = "see console";
-  });
-
-  document.getElementById("btn-play").addEventListener("click", startCustom);
-  document.getElementById("btn-browse").addEventListener("click", function () {
-    var g = document.getElementById("grid");
-    if (g) g.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
-
-  // Level chips: one selection at a time.
-  var lv = document.getElementById("pick-level");
-  for (var i = 0; i < lv.children.length; i++) bindChipSelect(lv.children[i], lv);
-
-  // Category cards open their quiz sheet (delegated).
-  document.getElementById("grid").addEventListener("click", function (ev) {
-    if (!ev.target || !ev.target.closest) return;
-    var card = ev.target.closest("div[data-cat]");
-    if (!card) return;
-    var ci = parseInt(card.dataset.cat, 10);
-    toggleSheet(ci);
-    var all = gridEl.children;
-    for (var k = 0; k < all.length; k++) {
-      if (all[k].dataset.cat) {
-        all[k].className = (openCat === parseInt(all[k].dataset.cat, 10))
-          ? "glass catcard open" : "glass catcard";
-      }
-    }
   });
 
   loadCorpus().then(onCorpus).catch(loaderError);

@@ -1,7 +1,159 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<title>Kwizzy</title>
-<meta http-equiv="refresh" content="0; url=web/">
-<link rel="stylesheet" href="data:,">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<p>Opening <a href="web/">the Kwizzy app</a>…</p>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05060f">
+<meta name="description" content="Kwizzy — play 5,566 quiz questions from quizo.fr, connaisseances.com and openquizzdb.org, as source quizzes or custom 20-question quizzes.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Kwizzy — Quiz Game</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2306070d'/%3E%3Cpath d='M9 8h14M9 16h14M9 24h14' stroke='%2335e2d2' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<script src="app.js" defer></script>
+</head>
+<body data-screen="title" data-kwizzy="boot">
+
+<!-- animated background: aurora blobs + drifting neon particle net + spark layer -->
+<div class="bg-aurora" aria-hidden="true"></div>
+<div class="bg-grid" aria-hidden="true"></div>
+<canvas class="bg-net" aria-hidden="true"></canvas>
+
+<!-- Loading: real progress bar fed by streamed bytes of corpus.json -->
+<div id="loader" class="loader" role="status" aria-live="polite">
+  <div class="loader-glyph" aria-hidden="true">?</div>
+  <div class="loader-bar" aria-hidden="true"><i></i></div>
+  <p class="loader-note">Waking the corpus…</p>
+</div>
+
+<div class="app" id="app">
+
+  <!-- ═══════════ SCREEN: TITLE ═══════════ -->
+  <section class="screen screen-title" id="screen-title" aria-label="Title">
+    <div class="title-inner">
+      <div class="logo-wrap">
+        <div class="logo-halo" aria-hidden="true"></div>
+        <img class="logo" src="media/kwizzy-title.png"
+             alt="Kwizzy — Quiz Game" width="719" height="350">
+      </div>
+      <p class="tagline">A living library of <span class="stat-n" id="stat-quizzes">—</span> quizzes and
+        <span class="stat-n" id="stat-questions">—</span> questions, from three public quiz sites.</p>
+      <button class="btn primary btn-xl press" id="btn-start" disabled>
+        <span class="btn-label">Play</span>
+      </button>
+      <button class="btn ghost btn-sm press" id="btn-about">
+        <span class="btn-label">Credits &amp; memory</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══════════ SCREEN: CHOICE (difficulty + how to play) ═══════════ -->
+  <section class="screen screen-choice" id="screen-choice" aria-label="Choose difficulty and mode">
+    <header class="topbar">
+      <button class="iconbtn press" data-back="title" aria-label="Back">&larr;</button>
+      <h2 class="topbar-title">How do you want to play?</h2>
+      <span class="iconbtn ghost-slot" aria-hidden="true"></span>
+    </header>
+
+    <div class="screen-body">
+      <div class="panel">
+        <h3 class="panel-h">Difficulty</h3>
+        <p class="panel-hint">Required — sets the pool Random 20 draws from.</p>
+        <div class="pick-level" id="pick-level" role="group" aria-label="Difficulty">
+          <button class="chip lvl press" data-lvl="0"><span class="chip-in">Facile</span></button>
+          <button class="chip lvl press" data-lvl="1"><span class="chip-in">Moyen</span></button>
+          <button class="chip lvl press" data-lvl="2"><span class="chip-in">Difficile</span></button>
+        </div>
+      </div>
+
+      <div class="mode-row">
+        <button class="mode-card press" id="btn-random" disabled>
+          <span class="mode-ico" aria-hidden="true">🎲</span>
+          <span class="mode-t">Random 20</span>
+          <span class="mode-d">A fresh 20-question quiz on this difficulty.</span>
+        </button>
+        <button class="mode-card press" id="btn-existing" disabled>
+          <span class="mode-ico" aria-hidden="true">📚</span>
+          <span class="mode-t">Existing quiz</span>
+          <span class="mode-d">Pick a quiz published by one of the sources.</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ SCREEN: CATEGORIES ═══════════ -->
+  <section class="screen screen-cats" id="screen-cats" aria-label="Categories">
+    <header class="topbar">
+      <button class="iconbtn press" data-back="choice" aria-label="Back">&larr;</button>
+      <h2 class="topbar-title" id="cats-title">Categories</h2>
+      <span class="iconbtn ghost-slot" aria-hidden="true"></span>
+    </header>
+
+    <div class="screen-body">
+      <!-- Random-20 path: optional category narrowing -->
+      <div class="panel" id="random-panel" hidden>
+        <h3 class="panel-h">Random 20 <span class="pill" id="random-lvl-pill">—</span></h3>
+        <p class="panel-hint">Category is optional — pick none and every category is in play.</p>
+        <div class="chips-scroll" id="cat-chips" role="group" aria-label="Category (optional)"></div>
+        <button class="btn primary btn-xl press" id="btn-play-random">
+          <span class="btn-label">Start Random 20</span>
+        </button>
+      </div>
+
+      <!-- Existing-quiz path: filters + category grid -->
+      <div id="existing-panel" hidden>
+        <div class="panel">
+          <h3 class="panel-h">Filters</h3>
+          <div class="filters" id="filters" role="group" aria-label="Filters"></div>
+        </div>
+        <div class="grid" id="grid"></div>
+        <div class="sheet-slot" id="sheet-slot"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ SCREEN: PLAY ═══════════ -->
+  <section class="screen screen-play" id="screen-play" aria-label="Play">
+    <div id="stage" hidden></div>
+  </section>
+
+  <!-- ═══════════ SCREEN: ABOUT ═══════════ -->
+  <section class="screen screen-about" id="screen-about" aria-label="Credits and memory">
+    <header class="topbar">
+      <button class="iconbtn press" data-back="title" aria-label="Back">&larr;</button>
+      <h2 class="topbar-title">Credits &amp; memory</h2>
+      <span class="iconbtn ghost-slot" aria-hidden="true"></span>
+    </header>
+
+    <div class="screen-body">
+      <div class="panel">
+        <h3 class="panel-h">Sources</h3>
+        <ul class="credits-list">
+          <li><a href="https://quizo.fr/" target="_blank" rel="noopener">quizo.fr</a> — French quiz site</li>
+          <li><a href="https://connaisseances.com/" target="_blank" rel="noopener">connaisseances.com</a> — French quiz site</li>
+          <li><a href="https://openquizzdb.org/" target="_blank" rel="noopener">openquizzdb.org</a> — open quiz database,
+            <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></li>
+        </ul>
+        <p class="fine">Kwizzy is an unofficial player: it re-hosts questions locally for offline play and links
+          back to each original quiz. Memory lives in your browser only — nothing is sent anywhere.</p>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-h">Your memory</h3>
+        <p class="legend">A <span class="badge">Answered before</span> badge on a question means it already lives
+          in your browser memory. Random 20 draws unseen questions first, then tops up with badged ones.</p>
+        <div class="memory-tools">
+          <button class="btn press" id="btn-stats"><span class="btn-label">My stats</span></button>
+          <button class="btn danger press" id="btn-reset"><span class="btn-label">Reset memory</span></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="burst" id="burst" aria-hidden="true"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+</body>
+</html>
