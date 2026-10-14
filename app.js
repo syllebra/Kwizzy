@@ -368,25 +368,21 @@ function burstAt(node, n) {
    there the visual animations stay the whole feedback. Also silent under reduceMotion. */
 function haptic(pattern) {
   if (reduceMotion) return;
-  var vibrate = null;
-  try { vibrate = navigator.vibrate; } catch (e) { return; }
-  if (!vibrate) return;                       // absent: iOS Safari, Firefox — stay silent
+  if (!navigator.vibrate) return;             // absent: iOS Safari, Firefox — stay silent
 
-  /* vibrate() returns FALSE when the browser refuses the pulse: the spec (and Chrome)
-     require a user gesture COMMITTED to the frame first, and the gesture carried by THIS
-     very tap only commits once the handler returns — so the first buttons of a session
-     (the Title's PLAY and Credits, the first difficulty chip) get refused and never buzz.
-     The return value says so, therefore RETRY on later tasks until it reports true: each
-     retry runs after the previous handler returned, so the gesture is committed by then.
-     A browser that grants the pulse immediately returns true and pulses on attempt one,
-     so nothing extra is felt there. */
+  /* vibrate() returns FALSE when the browser refuses the pulse: Chrome requires a user
+     gesture COMMITTED to the frame first (chromestatus feature 5644273861001216), and
+     Chromium issue 389016516 says the very first touchdown often fails to count — so the
+     first buttons of a session (the Title's PLAY and Credits) get refused and never buzz.
+     The return value tells us, so RETRY on later tasks until it reports true.
+     IMPORTANT: call it as navigator.vibrate(...) — a method of Navigator. Copying the
+     function into a local variable and calling THAT throws "Illegal invocation" (unbound),
+     which silently killed every vibration; navigator["vibrate"](p) is the safe alias. */
   var tries = 0;
   (function attempt() {
     var r = null;
-    try { r = vibrate(pattern); } catch (e) { return; }
-    // Only an EXPLICIT false means "refused" — a truthy or undefined return (some engines
-    // return nothing at all) is treated as "it fired", otherwise those would buzz 4 times.
-    if (r !== false) return;
+    try { r = navigator["vibrate"](pattern); } catch (e) { return; }
+    if (r !== false) return;                  // fired (or engine returns nothing): stop
     if (tries >= 3) return;                   // never granted (Silent mode, no motor): quiet
     var wait = [40, 90, 160][tries];
     tries++;
