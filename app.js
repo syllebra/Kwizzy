@@ -245,6 +245,11 @@ function onScreenShown(name) {
 function wirePress(root) {
   var r = root || document;
   r.addEventListener("pointerdown", function (ev) {
+    /* HAPTIC, the global one: EVERY button tap anywhere (title, menus, back arrows,
+       chips, skip, options — and any button added later) gets a subtle 20 ms pulse.
+       wirePress(document) is wired at boot, so future screens inherit it for free. */
+    var b = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+    if (b && !b.disabled) haptic(20);
     var t = ev.target && ev.target.closest ? ev.target.closest(".press, .opt, .catcard, .fchip, .mode-card, .iconbtn") : null;
     if (!t || t.disabled) return;
     t.classList.remove("shake");
@@ -791,7 +796,7 @@ function askCard(card) {
         else kids[i].classList.remove("sel");
       }
       thump(t, "selPop");
-      haptic(20);   // selecting is only a tap: one very short, subtle pulse
+      // no haptic here: the global wirePress pulse already fired on this tap
       if (!confirm) {
         confirm = mk("button", "btn press validate", "");
         add(confirm, mk("span", "btn-label", "Validate"));
