@@ -619,7 +619,7 @@ body[data-kwizzy="boot"] .app{visibility:hidden}
 }
 .lastq,.lastq2{display:block;margin:5px 0 0}
 .lastq2{color:var(--dim)}
-.qrow .chips .chip.last{
+.qrow .chips .chip.last{cursor:default;
   background:rgba(255,200,106,.12);border-color:rgba(255,200,106,.4);color:var(--faint);
   text-transform:lowercase;letter-spacing:.02em;
 }
