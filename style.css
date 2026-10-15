@@ -780,3 +780,32 @@ body[data-kwizzy="boot"] .title-inner .btn-sm{display:none}
   .toast{bottom:max(16px,env(safe-area-inset-bottom))}
 }
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:rect(0 0 0 0)}
+
+/* ═══════════ FULLSCREEN TOGGLE ═══════════
+   The layout normally caps the reading column (--measure) to keep text comfortable.
+   The button drops that cap so content runs edge to edge — what a phone or a big screen
+   wants during a quiz. Appended LAST so it wins over the base rules it restyles; it only
+   touches padding-LEFT, leaving the @supports safe-area padding-top intact. */
+.fsbtn{
+  position:fixed;left:10px;top:max(9px,env(safe-area-inset-top));z-index:70;
+  width:34px;height:34px;border-radius:11px;
+  display:inline-flex;align-items:center;justify-content:center;
+  color:var(--dim);background:rgba(5,6,15,.62);border:1px solid var(--edge-soft);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  transition:color .16s ease,border-color .16s ease;
+}
+.fsbtn:hover{color:var(--ink)}
+.fsbtn svg{display:block}
+.fsbtn.on{color:var(--teal);border-color:rgba(53,226,210,.55)}
+.fsbtn.on svg{filter:drop-shadow(0 0 6px rgba(53,226,210,.6))}
+.fsbtn:active{transform:scale(.9)}
+
+/* keep the corner clear of the topbar's back arrow, which sits at the left edge */
+.topbar{padding-left:calc(var(--pad) + 40px)}
+.hud{padding-left:calc(var(--pad) + 40px)}
+
+/* one class on <body> redefines --measure; every column already reads it, so the
+   whole layout (menus, cards, Play stack, images) re-flows with no per-screen work */
+body.fs{--measure:min(97vw,1500px)}
+body.fs .screen-body{padding:calc(var(--pad)*.7) calc(var(--pad)*.8) calc(var(--pad)*1.6)}
+body.fs .stack{padding:var(--gap) calc(var(--pad)*.8) calc(var(--pad)*1.8)}
