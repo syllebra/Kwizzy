@@ -8,9 +8,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Kwizzy — Quiz Game</title>
-<link rel="stylesheet" href="style.css?v=2026-10-14l">
+<link rel="stylesheet" href="style.css?v=2026-10-14n">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2306070d'/%3E%3Cpath d='M9 8h14M9 16h14M9 24h14' stroke='%2335e2d2' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-<script src="app.js?v=2026-10-14m" defer></script>
+<script src="app.js?v=2026-10-14s" defer></script>
 </head>
 <body data-screen="title" data-kwizzy="boot">
 
@@ -20,6 +20,15 @@
 <canvas class="bg-net" aria-hidden="true"></canvas>
 
 <div class="app" id="app">
+
+  <!-- Fullscreen toggle: always visible, on every screen, even while the corpus loads.
+       Corners drawn in SVG so no emoji/glyph can be missing from the font. -->
+  <button class="fsbtn" id="btn-fs" aria-label="Toggle fullscreen">
+    <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+      <path d="M3 9V3H9 M15 3H21V9 M21 15V21H15 M9 21H3V15" fill="none"
+            stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+    </svg>
+  </button>
 
   <!-- ═══════════ SCREEN: TITLE ═══════════ -->
   <section class="screen screen-title" id="screen-title" aria-label="Title">

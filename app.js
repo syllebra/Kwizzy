@@ -277,6 +277,7 @@ function show(name, opts) {
 
   if (from && !opts.instant && !reduceMotion) {
     from.classList.add("anim-out");
+    sfx("screen");   // an airy swell under every screen change, felt more than heard
     setTimeout(function () {
       from.classList.remove("anim-out");
       switching = false;
@@ -322,6 +323,10 @@ function wirePress(root) {
                                         // too (see the comment above haptic)
     var t = ev.target && ev.target.closest ? ev.target.closest(".press, .opt, .catcard, .fchip, .mode-card, .iconbtn") : null;
     if (!t || t.disabled) return;
+    /* SOUND: one tiny tick per UI tap. Options and Validate are skipped here because they
+       have their own dedicated sounds (select / validate) fired where the action is
+       decided — one sound per interaction, so a tap never becomes a two-note jingle. */
+    if (!t.classList.contains("opt") && !t.classList.contains("validate")) sfx("tap");
     t.classList.remove("shake");
     void t.offsetWidth;
     t.classList.add("shake");
@@ -362,7 +367,28 @@ function burstAt(node, n) {
   burst(r.left + r.width / 2, r.top + r.height / 2, n);
 }
 
-// A short screen-level thump, for correct/incorrect feedback.
+/* ─────────── SOUND ───────────
+   The clips are OURS: media/sfx/*.wav were synthesised from scratch by
+   scripts/kwizzy-sfx.py (sine + hash-noise envelopes, no samples, no licence), 55-320 ms
+   each, peaks 0.10-0.30 so the worst case is far under full scale. 7 clips ≈ 119 kB.
+   An Audio object per name is built on first use, so nothing is fetched before it is
+   needed; the files are tiny and same-origin so a play() fetch costs one small request.
+   NOT gated by reduceMotion: that setting is about flashing/moving images, not audio. */
+var sfxCache = {}, sfxFailed = {};
+function sfx(name) {
+  if (sfxFailed[name]) return;
+  var a = sfxCache[name];
+  if (!a) {
+    a = new Audio("media/sfx/" + name + ".wav");
+    sfxCache[name] = a;
+  }
+  try {
+    a.play();
+  } catch (e) {
+    sfxFailed[name] = true;                    // no audio backend: stay silent forever
+  }
+}
+
 /* Haptic feedback (Vibration API): Android Chrome/Samsung/Opera pulse the phone, iOS Safari
    and Firefox 129+ do not implement it at all (navigator.vibrate absent, or returns false) —
    there the visual animations stay the whole feedback. Also silent under reduceMotion. */
@@ -832,6 +858,9 @@ function gradeCard(card, slot) {
 
   // haptics: one clean buzz when the answer is right, a triple-tap buzz when it is wrong
   haptic(ok ? 60 : [25, 40, 25]);
+  // SOUND mirrors the haptics exactly: correct RISES (C5->E5, a win), wrong FALLS and is
+  // raspier (B4->G#4) — the two can never be mistaken for each other, or for the tap tick.
+  sfx(ok ? "correct" : "wrong");
 
   // juice: burst on the correct option, extra sparks when the player got it
   for (var b = 0; b < kids.length; b++) {
@@ -877,6 +906,7 @@ function askCard(card) {
         if (sel === null) { toast("Pick an answer first, then Validate."); return; }
         done = true;
         try { card.removeChild(confirm); } catch (e) {}
+        sfx("validate");   // the commit itself: a short whoosh, deliberately NOT a verdict
         resolve(sel);
         return;
       }
@@ -894,6 +924,7 @@ function askCard(card) {
         else kids[i].classList.remove("sel");
       }
       thump(t, "selPop");
+      sfx("select");   // the highlight moved: a small rising pip, brighter than a tap
       // no haptic here: the global wirePress pulse already fired on this tap
       if (!confirm) {
         confirm = mk("button", "btn press validate", "");
@@ -1081,6 +1112,7 @@ function launchCustom(lvlIdx, catIdx) {
 }
 
 function startCustom() {
+  sfx("start");   // the one loud yes of a run: three ascending notes (Random 20 launch)
   var lvlIdx = chosenLvl;
   var lv = document.getElementById("pick-level");
   if (lv) {
@@ -1351,12 +1383,30 @@ function wireScreens() {
   });
 }
 
+/* Fullscreen toggle. One class on <body> (`.fs`) flips --measure, which every column
+   already reads, so the whole layout re-flows with no per-screen work. The button is a
+   fixed element in the markup (not inside a screen) so it is there during loading too. */
+var fsBtn = null;
+function wireFs() {
+  fsBtn = document.getElementById("btn-fs");
+  if (!fsBtn) return;
+  fsBtn.addEventListener("click", function () {
+    var on = !document.body.classList.contains("fs");
+    if (on) document.body.classList.add("fs");
+    else document.body.classList.remove("fs");
+    fsBtn.classList.toggle("on", on);
+    toast(on ? "Fullscreen: content fills the whole screen."
+              : "Fullscreen off: comfortable reading column back.");
+  });
+}
+
 function boot() {
   loadMem();
   initLoader();
   wireMemoryTools();
   initNet();
   wirePress(document);
+  wireFs();
   wireScreens();
   document.body.dataset.screen = "title";
 
