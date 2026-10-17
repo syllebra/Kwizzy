@@ -13,10 +13,19 @@
 /* Memory shape (see ADR 0005): localStorage kwizzy.v1 = {a, b, t, s} —
    a: question id -> 1 (Answered Set), b: Origin key -> [score, total] (Best Score),
    t: question id -> epoch ms (Last Time of a Question),
-   s: Origin key  -> epoch ms (Last Time of an Origin: q:<quizIdx> / c:<lvl> / c:<lvl>|<cat>). */
+   s: Origin key  -> epoch ms (Last Time of an Origin: q:<quizIdx> / c:<lvl> / c:<lvl>|<cat>).
+
+   Player choices about AUDIO and HAPTICS are not game memory, so they live under their own
+   key (see ADR 0006): localStorage kwizzy.settings.v1 = {sfx, music, haptics, track} —
+   sfx:     UI feedback sounds on/off          (default true)
+   music:   the ambient music on/off           (default true)
+   haptics: the vibration pulse on/off         (default true)
+   track:   "all" (random order, the default) or one track id (media/music/playlist.js).
+   Reset memory clears kwizzy.v1 only — it erases what you played, never how the app sounds. */
 var REVEAL_MS = 2500;
 var CUSTOM_N = 20;
 var LS_KEY = "kwizzy.v1";
+var LS_SETTINGS = "kwizzy.settings.v1";
 
 var SRC_NAMES = ["quizo", "connaisseances", "openquizzdb"];
 var SRC_HOME = ["https://quizo.fr/", "https://connaisseances.com/", "https://openquizzdb.org/"];
@@ -60,6 +69,7 @@ function inPlay() {
 function goBack(dest) {
   // dest comes from the arrow that was tapped (its data-back) or from backKey for the
   // Back key — one destination per screen, no chaining back through the Menu.
+  if (isMenuOpen()) { closeMenu(); return; }   // the settings panel closes before anything else
   if (!dest) dest = backKey[screen];
   if (!dest) { toast("You are on the Title screen already."); return; }
   if (screen === "play" && inPlay()) {
@@ -233,6 +243,29 @@ function sameDay(ms) {
 // A "last played" stamp, warmed when the previous visit was today.
 function stamp(cls, text, ms) { return mk("span", cls + (sameDay(ms) ? " today" : ""), text); }
 
+/* ---------- player settings (localStorage kwizzy.settings.v1, ADR 0006) ----------
+   sfx/music/haptics/track, read by sfx(), haptic() and the Music engine. Kept in their own
+   key so "Reset memory" can erase the game memory without resetting how the app sounds. */
+var settings = null;
+
+function loadSettings() {
+  var o = null;
+  try {
+    var raw = localStorage.getItem(LS_SETTINGS);
+    if (raw) o = JSON.parse(raw);
+  } catch (e) { o = null; }
+  settings = {
+    sfx: !o || o.sfx !== false,               // `!== false`: an untouched default is ON
+    music: !o || o.music !== false,
+    haptics: !o || o.haptics !== false,
+    track: o && PLAYLIST.validTrack(o.track) ? o.track : "all"
+  };
+  return settings;
+}
+function saveSettings() {
+  try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch (e) {}
+}
+
 /* ---------- toast ---------- */
 var toastEl = null, toastTimer = 0;
 function toast(msg) {
@@ -260,6 +293,8 @@ function screenEl(name) {
 
 function show(name, opts) {
   if (SCREENS.indexOf(name) < 0 || switching) return;
+  closeMenu();   // the settings drawer belongs to the Screen you opened it on; moving on closes
+                 // it (the music itself keeps playing — the drawer is only a panel)
   var from = screenEl(screen), to = screenEl(name);
   if (!to || from === to) { screen = name; document.body.dataset.screen = name; return; }
 
@@ -376,6 +411,7 @@ function burstAt(node, n) {
    NOT gated by reduceMotion: that setting is about flashing/moving images, not audio. */
 var sfxCache = {}, sfxFailed = {};
 function sfx(name) {
+  if (!settings || !settings.sfx) return;      // Sound OFF in the menu: stay silent
   if (sfxFailed[name]) return;
   var a = sfxCache[name];
   if (!a) {
@@ -394,6 +430,7 @@ function sfx(name) {
    there the visual animations stay the whole feedback. Also silent under reduceMotion. */
 function haptic(pattern) {
   if (reduceMotion) return;
+  if (!settings || !settings.haptics) return;  // Haptics OFF in the menu: no pulse
   if (!navigator.vibrate) return;             // absent: iOS Safari, Firefox — stay silent
 
   /* vibrate() returns FALSE when the browser refuses the pulse: Chrome requires a user
@@ -422,6 +459,398 @@ function thump(el, cls) {
   void el.offsetWidth;
   el.classList.add(cls);
   setTimeout(function () { el.classList.remove(cls); }, 520);
+}
+
+/* ─────────── MUSIC ───────────
+   The ambient tracks are OURS: media/music/*.mp3, loopable on their own, one per mood. The
+   RULES of a play session live in media/music/playlist.js (pure state, tested by
+   media/music/playlist.test.js, read here through window.KwizzyPlaylist) so what the player
+   hears is what the test checks:
+     - a track is repeated 3 times, then the next one fades in (the crossfade);
+     - "All" (the default) walks the whole set in a random order and loops round;
+     - picking one track loops that one track and never moves on.
+   Playback is Web Audio, not <audio>.play(): the volume needs to be ramped (fade in, fade
+   out, crossfade), and only a GainNode can do that. Each track is fetched and decoded ONCE
+   and then held, so a track change or a repeat costs no request and starts immediately — the
+   engine keeps one AudioBufferSourceNode per play, wired through its own gain to the master.
+   Browsers refuse to start audio before the page has been interacted with (autoplay policy):
+   the source is loaded and played as soon as the app boots, and if the engine refuses, the
+   play is retried on the first tap or key press (musicUnlock), which is a user gesture. */
+var PLAYLIST = window.KwizzyPlaylist;
+var MUSIC_FADE_MS = 1200;      // fade in/out and crossfade over this
+var MUSIC_VOL = 0.55;          // the music sits well under the effects (sfx peak ~0.30)
+
+var Music = {
+  ctx: null, master: null,
+  buf: {},               // track id -> decoded AudioBuffer, kept for the life of the page
+  fetching: {},          // track id -> the decode promise, so one fetch is never doubled
+  player: null,          // { id, src, gain } — the track currently playing
+  state: null,           // the playlist state: choice + random order + play counter
+  started: false,        // a track is loaded and playing
+  muted: false,          // Music OFF, or nothing can play yet (no AudioContext)
+  overFade: false,       // a crossfade is running: the fading track must ignore its "ended"
+  wantId: null,          // what should be playing once the buffer is ready
+  loadFailed: false,     // the last track could not be fetched/decoded: the panel says so
+  lastEnd: 0
+};
+
+function musNow() {
+  try { return Music.ctx ? Music.ctx.currentTime : 0; } catch (e) { return 0; }
+}
+
+function musCtx() {
+  if (Music.ctx === undefined || Music.ctx) return Music.ctx;
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    Music.ctx = AC ? new AC() : null;
+    if (Music.ctx) {
+      Music.master = Music.ctx.createGain();
+      Music.master.gain.value = 0;
+      Music.master.connect(Music.ctx.destination);
+    }
+  } catch (e) { Music.ctx = null; }
+  return Music.ctx;
+}
+
+/* The master gain is the one place the volume is ramped: fade in, fade out and crossfade
+   are all the same call with another target. */
+function musGain(target, ms) {
+  var g = Music.master, ctx = Music.ctx;
+  if (!g || !ctx) return;
+  var now = ctx.currentTime, from = g.gain.value;
+  ms = ms || 0;
+  try { g.gain.cancelScheduledValues(now); } catch (e) {}
+  if (ms <= 0) { try { g.gain.setValueAtTime(target, now); } catch (e2) { g.gain.value = target; } return; }
+  try { g.gain.setValueAtTime(from, now); } catch (e3) {}
+  try { g.gain.linearRampToValueAtTime(target, now + ms / 1000); } catch (e4) { g.gain.value = target; }
+}
+
+/* Decoded once per track, kept for the life of the page: a repeat costs nothing. */
+function musFetch(id) {
+  var ctx = musCtx();
+  if (!ctx) return Promise.reject(new Error("no audio"));
+  if (Music.buf[id]) return Promise.resolve(Music.buf[id]);
+  if (Music.fetching[id]) return Music.fetching[id];
+  var tr = PLAYLIST.trackAt(PLAYLIST.indexOf(id));
+  if (!tr) return Promise.reject(new Error("unknown track " + id));
+  var p = fetch("media/music/" + tr.file, { cache: "force-cache" })
+    .then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.arrayBuffer();
+    })
+    .then(function (bytes) {
+      return new Promise(function (res, rej) { ctx.decodeAudioData(bytes, res, rej); });
+    })
+    .then(function (buf) { Music.buf[id] = buf; return buf; })
+    ["catch"](function (e) { delete Music.fetching[id]; throw e; });
+  Music.fetching[id] = p;
+  return p;
+}
+
+function musNewPlayer(id, buf) {
+  var ctx = Music.ctx;
+  var src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;                     // repeat until the playlist says "next one"
+  var gain = ctx.createGain();
+  gain.gain.value = 1;
+  src.connect(gain);
+  gain.connect(Music.master);
+  src.onended = musEnded;
+  return { id: id, src: src, gain: gain };
+}
+
+function musDropPlayer(p) {
+  if (!p) return;
+  try { p.src.onended = null; } catch (e) {}
+  try { p.gain.disconnect(); } catch (e2) {}
+  try { p.src.disconnect(); } catch (e3) {}
+  try { p.src.stop(); } catch (e4) {}
+}
+
+/* The track ran to its end. The logic is deliberately the playlist's, not the timer's: the
+   third play of a track switches to the next one (the crossfade), anything else repeats. */
+function musEnded() {
+  var now = Date.now();
+  if (now - Music.lastEnd < 400) return;   // one transition per end, never two
+  Music.lastEnd = now;
+  if (!Music.started || Music.overFade || !settings || !settings.music) return;
+  if (PLAYLIST.cycle(Music.state) === "next") musAdvance(0);
+}
+
+/* The next track of the order, crossfaded in: the old one keeps playing under the new one
+   while its own gain falls, which is what makes the join inaudible. */
+function musAdvance(ms) {
+  if (Music.overFade) return;
+  var pick = PLAYLIST.pick(Music.state);
+  var next = PLAYLIST.trackAt(pick.index);
+  if (!next) return;
+  if (Music.player && Music.player.id === next.id) { musStart(next.id, 0); return; }
+  Music.overFade = true;
+  Music.muted = false;
+  musStart(next.id, ms == null ? MUSIC_FADE_MS : ms);
+}
+
+/* Start a track. A crossfade only happens when another track is still audible underneath. */
+function musStart(id, ms) {
+  if (!musCtx()) return;
+  Music.wantId = id;
+  Music.started = true;
+  var old = Music.player;
+  var cross = !!old && !Music.muted && ms > 0;
+  Music.player = null;
+  musFetch(id).then(function (buf) {
+    if (!Music.started || Music.wantId !== id) return;   // the player changed its mind
+    var ctx = Music.ctx;
+    var p = musNewPlayer(id, buf);
+    try { ctx.resume(); } catch (e) {}
+    if (cross) {
+      // Both sources are connected to the master, so pulling the master down and starting
+      // the new track from silence IS the crossfade: no dip, no overlap of two loud tracks.
+      var t = musNow();
+      try { Music.master.gain.cancelScheduledValues(t); } catch (e1) {}
+      try { Music.master.gain.setValueAtTime(MUSIC_VOL, t); } catch (e2) {}
+      try { Music.master.gain.linearRampToValueAtTime(0, t + (ms / 2) / 1000); } catch (e3) {}
+      try { p.src.start(t + ms / 4000); } catch (e4) {}
+      try { Music.master.gain.linearRampToValueAtTime(MUSIC_VOL, t + ms / 1000); } catch (e5) {}
+      (function (dead, dur) {
+        setTimeout(function () { musDropPlayer(dead); }, dur + 400);
+      })(old, ms);
+    } else {
+      musDropPlayer(old);
+      try { p.src.start(); } catch (e6) {}
+      musGain(MUSIC_VOL, ms > 0 ? ms : MUSIC_FADE_MS);
+    }
+    Music.player = p;
+    Music.overFade = false;
+    Music.muted = false;
+    Music.loadFailed = false;
+    syncSettingsPanel();
+  })["catch"](function () {
+    Music.overFade = false;
+    Music.wantId = null;
+    Music.started = !!Music.player;
+    Music.loadFailed = true;      // the panel says so instead of claiming "waiting for a tap"
+    syncSettingsPanel();
+  });
+}
+
+/* Fade the music down and keep the track's place: switching Music back on resumes it. */
+function musicStop() {
+  Music.started = false;
+  Music.wantId = null;
+  if (Music.ctx) musGain(0, MUSIC_FADE_MS);
+  var p = Music.player;
+  Music.player = null;
+  if (!p) { Music.muted = true; syncSettingsPanel(); return; }
+  setTimeout(function () { musDropPlayer(p); }, MUSIC_FADE_MS + 200);
+  Music.muted = true;
+  syncSettingsPanel();
+}
+
+/* Music on: resume the track that was faded out, or start one for the first time. */
+function musicStart() {
+  if (!musCtx()) return;                 // no audio backend: the switch stays honest
+  try { Music.ctx.resume(); } catch (e) {}
+  var pick = PLAYLIST.pick(Music.state);
+  var id = PLAYLIST.trackAt(pick.index).id;
+  if (Music.player && Music.player.id === id) {
+    Music.muted = false;
+    Music.started = true;
+    musGain(MUSIC_VOL, MUSIC_FADE_MS);
+    syncSettingsPanel();
+    return;
+  }
+  Music.started = true;
+  musStart(id, MUSIC_FADE_MS);
+}
+
+function musicSelectTrack(id) {
+  var playing = Music.player && !Music.muted;
+  PLAYLIST.select(Music.state, id);
+  if (playing) musStart(id, MUSIC_FADE_MS);
+  else syncSettingsPanel();
+}
+
+/* Browsers refuse audio before the page has been touched: try, and if it is refused, wait
+   for the first tap or key press and try again — that gesture is what unlocks it. */
+function musicUnlock() {
+  if (!settings || !settings.music) return;
+  if (Music.player && !Music.muted) return;
+  musicStart();
+}
+
+/* Web Audio present at all? A context that is merely SUSPENDED (the browser waiting for a
+   user gesture — Chrome starts them that way) still counts as available: musicStart() calls
+   resume() and the first tap or key press unlocks it. Only its total absence greys the menu. */
+function musicSupported() {
+  return !!(window.AudioContext || window.webkitAudioContext);
+}
+
+function musicBoot() {
+  Music.state = PLAYLIST.makeState(settings.track);
+  // Built now, at boot, even though it may be born suspended: a context created later from
+  // inside a tap is fine too, but creating it NOW is what lets the app try to play the music
+  // immediately and know whether the engine refused (autoplay policy) rather than never try.
+  if (!musCtx()) return;                       // no Web Audio: the Music switch greys out
+  var first = PLAYLIST.trackAt(PLAYLIST.pick(Music.state).index).id;
+  musFetch(first)["catch"](function () {});
+  if (settings.music) musStart(first, MUSIC_FADE_MS);
+  window.addEventListener("pointerdown", musicUnlock, { passive: true });
+  window.addEventListener("keydown", musicUnlock);
+}
+
+/* ---------- the settings menu (the burger) ----------
+   One fixed button in the markup on EVERY screen (like the fullscreen corner), one panel
+   under it. Everything here is presentation of `settings` + `Music`: the music engine above
+   is what makes the sound, this only says what is on and takes the player's choice. */
+var menuEl = null, menuBackEl = null, burgerEl = null;
+var mSfxEl = null, mMusicEl = null, mHapEl = null, mHapRow = null,
+    mListEl = null, mNowEl = null, mSelEl = null;
+
+function initSettingsPanel() {
+  menuEl = document.getElementById("settings-menu");
+  menuBackEl = document.getElementById("menu-back");
+  burgerEl = document.getElementById("btn-menu");
+  mSfxEl = document.getElementById("set-sfx");
+  mMusicEl = document.getElementById("set-music");
+  mHapEl = document.getElementById("set-haptics");
+  mHapRow = mHapEl ? mHapEl.closest(".mrow") : null;
+  mListEl = document.getElementById("track-list");
+  mNowEl = document.getElementById("music-now");
+  mSelEl = document.getElementById("music-sel");
+  buildTrackList();
+  wireMenu();
+  syncSettingsPanel();
+}
+
+/* The three toggles: one class on the row carries the state, plus aria-checked for anyone
+   reading rather than looking — the mode is never colour-only (ADR 0004). */
+function setToggle(el, on) {
+  if (!el) return;
+  var row = el.closest(".mrow");
+  if (row) row.classList.toggle("on", !!on);
+  el.setAttribute("aria-checked", on ? "true" : "false");
+}
+
+function buildTrackList() {
+  if (!mListEl || !PLAYLIST) return;
+  mListEl.innerHTML = "";
+  var choices = [{ id: PLAYLIST.ALL, label: "All", note: "random order, fading on after 3 plays" }];
+  var i;
+  for (i = 0; i < PLAYLIST.TRACKS.length; i++) {
+    choices.push({ id: PLAYLIST.TRACKS[i].id, label: PLAYLIST.TRACKS[i].label, note: "loops on its own" });
+  }
+  for (i = 0; i < choices.length; i++) {
+    var row = mk("button", "track press");
+    row.dataset.track = choices[i].id;
+    add(row, mk("span", "tk-t", choices[i].label));
+    add(row, mk("span", "tk-n", choices[i].note));
+    (function (btn) {
+      btn.addEventListener("click", function () { chooseTrack(btn.dataset.track); });
+    })(row);
+    add(mListEl, row);
+  }
+}
+
+function chooseTrack(id) {
+  settings.track = PLAYLIST.validTrack(id) ? id : PLAYLIST.ALL;
+  saveSettings();
+  musicSelectTrack(settings.track);
+  syncSettingsPanel();
+  if (settings.track === PLAYLIST.ALL) {
+    toast("Music: All — a random order, each track 3 times, then a fade to the next.");
+  } else {
+    toast("Music: " + PLAYLIST.label(settings.track) + " — looping on its own.");
+  }
+}
+
+/* What the panel says right now: switch states, the picked choice, and which track is
+   actually playing (named, so the choice and what you hear can be compared). */
+function syncSettingsPanel() {
+  if (!menuEl || !settings) return;
+  setToggle(mSfxEl, settings.sfx);
+  setToggle(mMusicEl, settings.music);
+  setToggle(mHapEl, settings.haptics);
+  if (mMusicEl) mMusicEl.disabled = !musicSupported();   // no Web Audio: greys out, like haptics
+  if (mHapRow) mHapRow.classList.toggle("off", !navigator.vibrate);
+  if (mSelEl) mSelEl.textContent = PLAYLIST.label(settings.track);
+  if (mListEl) {
+    for (var i = 0; i < mListEl.children.length; i++) {
+      var row = mListEl.children[i];
+      if (row.dataset.track === settings.track) row.dataset.sel = "1";
+      else row.removeAttribute("data-sel");
+    }
+  }
+  if (mNowEl) {
+    if (!settings.music) mNowEl.textContent = "Music is off.";
+    else if (!musicSupported()) mNowEl.textContent = "This browser has no audio engine — music stays off.";
+    else if (Music.loadFailed && !Music.player) {
+      mNowEl.textContent = "That track could not be loaded — try another music choice.";
+    } else if (Music.player) {
+      var st = PLAYLIST.pick(Music.state);
+      mNowEl.textContent = "Playing: " + PLAYLIST.trackAt(st.index).label +
+        (settings.track === PLAYLIST.ALL
+          ? " · play " + (Music.state.loops + 1) + " of " + PLAYLIST.REPEATS +
+            " · track " + st.nth + " of " + st.order
+          : " · looping");
+    } else mNowEl.textContent = "Waiting for your first tap to start the music.";
+  }
+  if (menuEl) menuEl.dataset.open = isMenuOpen() ? "1" : "0";
+}
+
+function isMenuOpen() { return !!menuEl && menuEl.classList.contains("open"); }
+
+function openMenu() {
+  if (!menuEl || !menuBackEl) return;
+  menuBackEl.hidden = false;
+  menuEl.hidden = false;
+  menuEl.dataset.open = "1";
+  syncSettingsPanel();
+  void menuEl.offsetWidth;
+  menuEl.classList.add("open");
+  if (burgerEl) burgerEl.setAttribute("aria-expanded", "true");
+  thump(menuEl.querySelector(".menu-title"), "bump");
+}
+function closeMenu() {
+  if (!menuEl) return;
+  menuEl.classList.remove("open");
+  menuEl.dataset.open = "0";
+  menuEl.hidden = true;
+  menuBackEl.hidden = true;
+  if (burgerEl) burgerEl.setAttribute("aria-expanded", "false");
+}
+function toggleMenu() { if (isMenuOpen()) closeMenu(); else openMenu(); }
+
+function wireMenu() {
+  var close = document.getElementById("menu-close");
+  if (burgerEl) burgerEl.addEventListener("click", function (ev) {
+    if (ev.stopPropagation) ev.stopPropagation();
+    toggleMenu();
+  });
+  if (close) close.addEventListener("click", closeMenu);
+  if (menuBackEl) menuBackEl.addEventListener("click", closeMenu);
+  if (mSfxEl) mSfxEl.addEventListener("click", function () {
+    settings.sfx = !settings.sfx;
+    saveSettings();
+    if (settings.sfx) sfx("tap");      // the tick confirms the new state, so it fires after
+    syncSettingsPanel();
+    toast(settings.sfx ? "Sound effects on." : "Sound effects off.");
+  });
+  if (mMusicEl) mMusicEl.addEventListener("click", function () {
+    settings.music = !settings.music;
+    saveSettings();
+    if (settings.music) musicStart(); else musicStop();
+    syncSettingsPanel();
+    toast(settings.music ? "Music on." : "Music off.");
+  });
+  if (mHapEl) mHapEl.addEventListener("click", function () {
+    settings.haptics = !settings.haptics;
+    saveSettings();
+    if (settings.haptics) haptic(30);  // says "this is what you just switched on"
+    syncSettingsPanel();
+    toast(settings.haptics ? "Haptic feedback on." : "Haptic feedback off.");
+  });
 }
 
 
@@ -1325,6 +1754,9 @@ function wireScreens() {
     var isBack = ev.key === "Escape" || ev.key === "Backspace" ||
       ev.code === "Escape" || ev.code === "Backspace" || ev.keyCode === 4;
     if (!isBack) return;
+    // While the settings panel is open, the Back key closes IT — the panel is the thing on
+    // screen, so it is what Back must undo (goBack() routes this, one place, one behaviour).
+    if (isMenuOpen()) { ev.preventDefault(); haptic(30); closeMenu(); return; }
     ev.preventDefault();
     haptic(40);
     goBack(backKey[screen]);
@@ -1402,12 +1834,15 @@ function wireFs() {
 
 function boot() {
   loadMem();
+  loadSettings();               // the player's audio/haptics choices, before anything sounds
   initLoader();
   wireMemoryTools();
   initNet();
   wirePress(document);
   wireFs();
   wireScreens();
+  initSettingsPanel();          // the burger: toggles + the music choice, on every screen
+  musicBoot();                  // loads Light ambient (or the saved choice) and starts it
   document.body.dataset.screen = "title";
 
   window.addEventListener("error", function (ev) {
@@ -1417,6 +1852,21 @@ function boot() {
   });
 
   loadCorpus().then(onCorpus).catch(loaderError);
+}
+
+/* The harness that verifies this app in Node (media/music/_harness/run.js) loads this very
+   file and asks for the music objects: they are closures, so there is no other way in. It
+   only ever sets this flag (the app never does), and nothing here runs unless it is set. */
+if (window.__kwizzyHarness) {
+  window.__kw = {
+    Music: Music, PLAYLIST: PLAYLIST, settings: function () { return settings; },
+    menu: { open: openMenu, close: closeMenu, isOpen: isMenuOpen, sync: syncSettingsPanel },
+    music: {
+      start: musicStart, stop: musicStop, select: musicSelectTrack,
+      unlock: musicUnlock, supported: musicSupported
+    },
+    haptic: haptic, sfx: sfx, show: show, goBack: goBack
+  };
 }
 
 boot();

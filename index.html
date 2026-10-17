@@ -8,9 +8,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Kwizzy — Quiz Game</title>
-<link rel="stylesheet" href="style.css?v=2026-10-14n">
+<link rel="stylesheet" href="style.css?v=2026-10-15d">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2306070d'/%3E%3Cpath d='M9 8h14M9 16h14M9 24h14' stroke='%2335e2d2' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-<script src="app.js?v=2026-10-14s" defer></script>
+<!-- playlist.js is the music RULES (pure state: random order, 3 plays, then next) and must be
+     there before app.js reads window.KwizzyPlaylist. Both are deferred, so they run in order. -->
+<script src="media/music/playlist.js?v=2026-10-15d" defer></script>
+<script src="app.js?v=2026-10-15d" defer></script>
 </head>
 <body data-screen="title" data-kwizzy="boot">
 
@@ -29,6 +32,52 @@
             stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
     </svg>
   </button>
+
+  <!-- Settings (the burger): the other fixed corner, on every screen, like the fullscreen
+       button. It opens the panel below — sound, music, haptics and which music to play. -->
+  <button class="menubtn" id="btn-menu" aria-label="Sound and music settings"
+          aria-expanded="false" aria-controls="settings-menu">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path d="M4 7h16M4 12h16M4 17h16" fill="none"
+            stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+  </button>
+
+  <!-- The panel itself: kept OUTSIDE the Screens so it can open over any of them (the Screen
+       router only ever shows one Screen, and this is not one — it is a drawer on top). -->
+  <div class="menuscrim" id="menu-back" hidden></div>
+  <aside class="menu" id="settings-menu" role="dialog" aria-label="Sound and music" hidden>
+    <div class="menu-head">
+      <h2 class="menu-title">Sound &amp; music</h2>
+      <button class="menu-x" id="menu-close" aria-label="Close settings">&times;</button>
+    </div>
+
+    <div class="mrow" id="row-sfx">
+      <div class="mrow-t">Sound effects<span class="mrow-d">Taps, right/wrong answers, screen changes.</span></div>
+      <button class="switch press" id="set-sfx" role="switch" aria-checked="true"
+              aria-labelledby="row-sfx"><span class="knob"></span></button>
+    </div>
+
+    <div class="mrow" id="row-music">
+      <div class="mrow-t">Music<span class="mrow-d">Ambient music while you play.</span></div>
+      <button class="switch press" id="set-music" role="switch" aria-checked="true"
+              aria-labelledby="row-music"><span class="knob"></span></button>
+    </div>
+
+    <div class="mrow" id="row-haptics">
+      <div class="mrow-t">Haptic feedback<span class="mrow-d" id="hap-note">Short vibrations on taps and answers.</span></div>
+      <button class="switch press" id="set-haptics" role="switch" aria-checked="true"
+              aria-labelledby="row-haptics"><span class="knob"></span></button>
+    </div>
+
+    <div class="msep"></div>
+
+    <div class="mh">Music choice <span class="pill" id="music-sel">All</span></div>
+    <p class="mhint">“All” plays every track in a random order — opening on Light ambient — repeats
+      each one 3 times, then fades into the next. Picking one track loops it on its own.</p>
+    <div class="tracks" id="track-list" role="radiogroup" aria-label="Music choice"></div>
+    <p class="now" id="music-now" aria-live="polite">Music is starting…</p>
+  </aside>
 
   <!-- ═══════════ SCREEN: TITLE ═══════════ -->
   <section class="screen screen-title" id="screen-title" aria-label="Title">

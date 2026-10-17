@@ -79,3 +79,30 @@ already answered, and the final summary.
 **Juice** — deliberate, non-essential feedback that makes an action feel good: shake, pop, glow,
 particle burst, easing. Juice never carries meaning on its own; anything a player must understand is
 also said in text.
+
+## Sound
+
+**Sound** — the short feedback clips of the interface: the tick on a tap, the pip when the highlight
+moves, the whoosh on Validate, the rising and falling verdicts, the swell under a Screen change.
+Distinct from Music: either can be on without the other.
+
+**Music** — the ambient tracks played under everything else, one at a time, always looping. Loaded
+at startup, and the player can turn it off.
+
+**Track** — one ambient file in `media/music`, named by a lowercase id (`light_ambient`). A Track
+loops on its own; the Music menu can pick one, or pick **All**.
+
+**All** — the default Music choice: the Tracks play in a random order that always opens on
+`light_ambient` (the startup Track), each one repeated three times, then the next fades in while the
+previous fades out. The order is reshuffled per visit.
+
+**Play count** — how many times the current Track has been played through in the current round of
+**All**. At three, the next Track of the order is reached. A single picked Track has no Play
+count — it simply loops.
+
+**Haptics** — the short vibration on taps and answers, where the device can do it. Absent on some
+devices, and then the setting is shown greyed out rather than hidden.
+
+**Settings** — the player's Sound, Music, Haptics and Music-choice preferences, remembered in the
+browser. Separate from Memory: they say how the app behaves, not what has been played, so Reset
+memory never touches them.

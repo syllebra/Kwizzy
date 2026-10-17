@@ -803,6 +803,124 @@ body[data-kwizzy="boot"] .title-inner .btn-sm{display:none}
 /* keep the corner clear of the topbar's back arrow, which sits at the left edge */
 .topbar{padding-left:calc(var(--pad) + 40px)}
 .hud{padding-left:calc(var(--pad) + 40px)}
+/* …and clear of the burger at the right edge, so a long title never slides under it */
+.topbar{padding-right:calc(var(--pad) + 40px)}
+/* a narrow phone with a long title: drop the topbar title to its own line rather than
+   squeeze it between the two corner buttons */
+@media (max-width:430px){
+  .topbar{flex-wrap:wrap}
+  .topbar-title{flex:1 1 100%;order:3;margin-top:4px}
+}
+
+/* ═══════════ SETTINGS (the burger) ═══════════
+   The burger is the mirror of the fullscreen corner: fixed, above every Screen, there during
+   loading too. The panel it opens is a drawer — a card dropping from the top-right — because
+   what it holds (sound, music, haptics, the music choice) has to be reachable WITHOUT leaving
+   whatever Screen the player is on. Appended after the fullscreen block so it can share its
+   corner geometry. */
+.menubtn{
+  position:fixed;right:10px;top:max(9px,env(safe-area-inset-top));z-index:71;
+  width:34px;height:34px;border-radius:11px;
+  display:inline-flex;align-items:center;justify-content:center;
+  color:var(--dim);background:rgba(5,6,15,.62);border:1px solid var(--edge-soft);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  transition:color .16s ease,border-color .16s ease,transform .14s ease;
+}
+.menubtn:hover{color:var(--ink)}
+.menubtn svg{display:block}
+.menubtn[aria-expanded="true"]{color:var(--teal);border-color:rgba(53,226,210,.55)}
+.menubtn[aria-expanded="true"] svg{filter:drop-shadow(0 0 6px rgba(53,226,210,.6))}
+.menubtn:active{transform:scale(.9)}
+
+/* the scrim: it belongs to the panel, so anything OUTSIDE the card closes it (the panel is
+   not a Screen — the player never leaves the one they are on) */
+.menuscrim{
+  position:fixed;inset:0;z-index:60;border:0;padding:0;margin:0;width:100%;height:100%;
+  background:rgba(3,4,10,.58);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+}
+.menuscrim[hidden]{display:none}
+.menuscrim.show{animation:scrimIn .24s ease both}
+@keyframes scrimIn{from{opacity:0}to{opacity:1}}
+
+.menu{
+  position:fixed;right:10px;top:calc(max(9px,env(safe-area-inset-top)) + 42px);z-index:65;
+  width:min(380px,calc(100vw - 20px));max-height:calc(100dvh - 84px);overflow-y:auto;
+  padding:16px;border-radius:20px;
+  transform-origin:top right;
+  background:var(--glass-2);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);
+  border:1.5px solid var(--edge);box-shadow:var(--shadow);
+  display:flex;flex-direction:column;gap:11px;
+}
+.menu[hidden]{display:none}
+.menu[data-open="1"]{animation:menuDrop .28s cubic-bezier(.2,.9,.25,1.06) both}
+@keyframes menuDrop{from{opacity:0;transform:translateY(-14px) scale(.94)}to{opacity:1;transform:none}}
+
+.menu-head{display:flex;align-items:center;gap:8px}
+.menu-title{
+  flex:1;margin:0;font-size:.98rem;font-weight:850;letter-spacing:-.01em;
+  text-shadow:0 0 14px rgba(53,226,210,.32);
+}
+.menu-x{
+  flex:0 0 auto;width:32px;height:32px;border-radius:10px;font-size:1.3rem;line-height:1;
+  display:inline-flex;align-items:center;justify-content:center;
+  color:var(--dim);background:rgba(255,255,255,.06);border:1px solid var(--edge-soft);
+}
+.menu-x:hover{color:var(--ink);background:rgba(255,255,255,.13)}
+.menu-x:active{transform:scale(.9)}
+
+/* a switch row: the LABEL is not the button (only the switch is), so a stray tap on the
+   text cannot flip a setting by accident. The state lives on the row (.on), and the pill
+   travels — colour alone never carries it (role="switch" + aria-checked say it in words). */
+.mrow{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 11px;border-radius:14px;
+  background:rgba(255,255,255,.05);border:1px solid var(--edge-soft);
+}
+.mrow-t{flex:1;font-size:.86rem;font-weight:750;display:block}
+.mrow-d{display:block;margin-top:2px;font-size:.7rem;font-weight:600;color:var(--faint);line-height:1.35}
+.switch{
+  position:relative;flex:0 0 auto;width:52px;height:30px;border-radius:99px;
+  background:rgba(255,255,255,.10);border:1.5px solid var(--edge);
+  transition:background .2s ease,border-color .2s ease;
+}
+.switch .knob{
+  position:absolute;left:3px;top:50%;width:22px;height:22px;border-radius:50%;margin-top:-11px;
+  background:var(--faint);
+  transition:transform .22s cubic-bezier(.2,.9,.25,1.2),background .2s ease;
+}
+.mrow.on .switch{background:var(--grad);border-color:transparent;box-shadow:0 6px 18px rgba(53,226,210,.3)}
+.mrow.on .switch .knob{transform:translateX(22px);background:#06070d}
+.switch:active .knob{transform:scale(.9)}
+.mrow.on .switch:active .knob{transform:translateX(22px) scale(.9)}
+/* a feature this device cannot do: dimmed AND told in words, never silently missing */
+.mrow.off{opacity:.55}
+.mrow.off .switch{cursor:not-allowed;filter:grayscale(1)}
+.switch:disabled{cursor:not-allowed;filter:grayscale(.7);opacity:.75}
+
+.msep{height:1px;margin:3px 0;background:var(--edge-soft)}
+.mh{font-size:.86rem;font-weight:800;display:flex;align-items:center;gap:8px}
+.mhint{margin:-4px 0 0;font-size:.71rem;color:var(--dim);line-height:1.45}
+.tracks{display:flex;flex-direction:column;gap:7px}
+.menu .tracks .track{
+  display:flex;flex-direction:column;align-items:flex-start;gap:1px;
+  width:100%;text-align:left;padding:9px 12px;border-radius:12px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1.5px solid var(--edge-soft);
+  transition:background .16s ease,border-color .16s ease,transform .12s ease;
+}
+.menu .tracks .track:hover{background:rgba(255,255,255,.12)}
+.menu .tracks .track:active{transform:scale(.985)}
+.menu .tracks .track[data-sel="1"]{
+  border-color:rgba(53,226,210,.65);background:rgba(53,226,210,.14);
+  box-shadow:inset 3px 0 0 var(--teal);
+}
+.tk-t{font-size:.84rem;font-weight:800}
+.tk-n{font-size:.68rem;color:var(--faint);font-weight:600}
+.now{
+  margin:0;font-size:.72rem;color:var(--teal);font-weight:750;
+  display:flex;align-items:center;gap:6px;
+}
+.now::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--teal);flex:0 0 auto;box-shadow:0 0 8px var(--teal)}
 
 /* one class on <body> redefines --measure; every column already reads it, so the
    whole layout (menus, cards, Play stack, images) re-flows with no per-screen work */

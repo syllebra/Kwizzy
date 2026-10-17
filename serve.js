@@ -22,6 +22,8 @@ const TYPES = {
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".woff2": "font/woff2",
+  ".mp3": "audio/mpeg",          // the ambient tracks (media/music); Chrome refuses a wrong type
+  ".wav": "audio/wav",           // and the interface clips (media/sfx)
 };
 
 function localAddresses() {
