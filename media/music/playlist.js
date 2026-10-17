@@ -125,12 +125,33 @@
     return state;
   }
 
+  /* Is the play about to start the LAST one of this track? Read-only: the caller may not
+     cycle() yet (that would count it twice), it only needs to know whether to let the next
+     track fade in over the tail of this one. A single selected track never has a last play. */
+  function lastPlay(state) {
+    if (state.track !== ALL) return false;
+    return (state.loops + 1) >= REPEATS;
+  }
+
+  /* The track that will be picked once the CURRENT play ends, or null when it is the same
+     one (a repeat, or a single selected track). Lets the engine warm that buffer while the
+     current play is still running: the next fetch costs seconds, and 25 s of music hides
+     them. Read-only like lastPlay(). */
+  function nextId(state) {
+    if (state.track !== ALL) return null;
+    if ((state.loops + 1) < REPEATS) return null;
+    var n = state.order.length;
+    var nextOffset = ((((state.offset + 1) % n) + n) % n);
+    return indexOf(state.order[nextOffset]) >= 0 ? state.order[nextOffset] : null;
+  }
+
   function trackAt(index) { return TRACKS[index]; }
 
   return {
     TRACKS: TRACKS, ALL: ALL, REPEATS: REPEATS, FIRST: FIRST,
     ids: ids, label: label, indexOf: indexOf, validTrack: validTrack,
     shuffle: shuffle, shuffleOrder: shuffleOrder,
-    makeState: makeState, pick: pick, cycle: cycle, select: select, trackAt: trackAt
+    makeState: makeState, pick: pick, cycle: cycle, select: select,
+    lastPlay: lastPlay, nextId: nextId, trackAt: trackAt
   };
 });

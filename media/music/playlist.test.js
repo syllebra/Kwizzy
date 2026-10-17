@@ -137,5 +137,41 @@ group("switching selection");
   eq(t.track, "all", "an unknown choice is stored as All");
 }
 
+group("lastPlay: the rule the engine asks before starting a play");
+{
+  const s = P.makeState("all");
+  ok(P.lastPlay(s) === false, "a fresh round: the 1st play is not the last");
+  P.cycle(s);
+  ok(P.lastPlay(s) === false, "after 1 play: the 2nd is not the last either");
+  P.cycle(s);
+  ok(P.lastPlay(s) === true, "after 2 plays: the 3rd IS the last, so the next track crossfades");
+  eq(P.lastPlay(s), true, "and asking twice changes nothing (read-only, it never counts)");
+  P.cycle(s);
+  ok(P.lastPlay(s) === false, "after the advance: the new track starts its own 3 plays");
+  const one = P.makeState("light_ambient");
+  ok(P.lastPlay(one) === false, "a single selected track has no last play, ever");
+  P.cycle(one); P.cycle(one); P.cycle(one);
+  ok(P.lastPlay(one) === false, "and cycling it never invents one");
+}
+
+group("nextId: which track the engine must already be downloading");
+{
+  /* state.loops counts the plays ALREADY finished, so the play about to start is the
+     (loops+1)-th: with 2 finished, play 3 is the last one of this track. */
+  const s = P.makeState("all");
+  ok(P.nextId(s) === null, "play 1 of 3: after it comes the same track again, nothing to warm");
+  P.cycle(s);
+  ok(P.nextId(s) === null, "play 2 of 3: after it comes the same track again, nothing to warm");
+  P.cycle(s);
+  const id = P.nextId(s);
+  ok(typeof id === "string", "play 3 of 3 (2 already done): the next track of the order, warm now");
+  const cur = P.trackAt(P.pick(s).index).id;
+  ok(id !== cur, "and it is a DIFFERENT track than the one playing");
+  P.cycle(s);
+  ok(P.nextId(s) === null, "after the advance: the new track starts its own repeats");
+  const one = P.makeState("light_ambient");
+  ok(P.nextId(one) === null, "a single selected track never needs another one warmed");
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -922,6 +922,63 @@ body[data-kwizzy="boot"] .title-inner .btn-sm{display:none}
 }
 .now::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--teal);flex:0 0 auto;box-shadow:0 0 8px var(--teal)}
 
+/* THE MENU FITS THE SCREEN — on a phone it must not spill into a scroll. The card is a
+   flex column, so when the viewport is short the rows are not scrolled, they are compacted:
+   the padding tightens, the hint paragraph (which only restates the "All" row) drops, and
+   the track list stops being a stack and wraps sideways into chips — six stacked rows are
+   what makes the card taller than a phone in the first place. Measured (see measure_menu.py,
+   a scratch script): stacked it wants 642px, a 390x844 phone gives it 760, but a 390x664 one
+   gives 580, so the chips tier starts at 780. overflow-y:auto below is only a safety net for
+   a viewport where even the compact card does not fit; at real sizes nothing scrolls. */
+@media (max-height:900px){
+  .menu{padding:12px 14px;gap:8px}
+  .mrow{padding:8px 10px}
+  .mrow-d{font-size:.66rem}
+  .mhint{display:none}
+  .tracks{gap:5px}
+  .menu .tracks .track{padding:6px 10px}
+  .tk-n{font-size:.64rem}
+}
+@media (max-height:780px){
+  .tracks{flex-direction:row;flex-wrap:wrap;align-items:start;gap:4px}
+  .menu .tracks .track{
+    width:auto;min-width:0;flex:1 1 0;padding:5px 9px;border-radius:10px;gap:0;
+  }
+  .tk-n{display:none}                      /* the note is the same for all but "All" */
+  .menu .tracks .track[data-sel="1"] .tk-n{display:block}
+}
+@media (max-height:430px){
+  .menu{padding:6px 10px;gap:4px}
+  .mrow{padding:3px 7px;gap:7px}
+  .mrow-t{font-size:.76rem}
+  .mrow-d{display:none}                    /* the label alone: the row is the setting */
+  .switch{width:40px;height:24px}
+  .switch .knob{width:16px;height:16px;margin-top:-8px}
+  .mrow.on .switch .knob{transform:translateX(16px)}
+  .mrow.on .switch:active .knob{transform:translateX(16px) scale(.9)}
+  .msep{display:none}
+  .mh{font-size:.74rem}
+  .tracks{gap:3px}
+  .menu .tracks .track{padding:4px 8px}
+  .now{font-size:.62rem;gap:3px}
+  .menu-head{gap:6px}
+  .menu-x{width:28px;height:28px;font-size:1.1rem}
+  .menu-title{font-size:.86rem}
+  /* the card hangs 42px under the burger; on a 390px-tall landscape that bottom margin is
+     what is left over, so it gives the extra headroom the compact card still needs */
+  .menu{max-height:calc(100dvh - 70px)}
+}
+/* The shortest phones laid sideways (a 667x370 viewport gives the card 300px): the "Music
+   choice / All" header is the last thing standing, and the lit chip already says which one
+   is selected, so it is the row that goes. Measured: without it 667x370 wants 289 of 300. */
+@media (max-height:520px){
+  .mh{display:none}
+  .menu{padding:5px 9px;gap:3px}
+  .tracks{gap:3px}
+  .menu .tracks .track{padding:4px 8px}
+  .now{font-size:.6rem}
+}
+
 /* one class on <body> redefines --measure; every column already reads it, so the
    whole layout (menus, cards, Play stack, images) re-flows with no per-screen work */
 body.fs{--measure:min(97vw,1500px)}

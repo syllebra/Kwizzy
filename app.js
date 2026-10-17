@@ -489,6 +489,7 @@ var Music = {
   started: false,        // a track is loaded and playing
   muted: false,          // Music OFF, or nothing can play yet (no AudioContext)
   overFade: false,       // a crossfade is running: the fading track must ignore its "ended"
+  pendingId: null,       // a play asked for and still waiting on its decode, by id
   wantId: null,          // what should be playing once the buffer is ready
   loadFailed: false,     // the last track could not be fetched/decoded: the panel says so
   lastEnd: 0
@@ -510,6 +511,14 @@ function musCtx() {
     }
   } catch (e) { Music.ctx = null; }
   return Music.ctx;
+}
+
+/* Chrome hands out an AudioContext FROZEN: currentTime stays at 0 — nothing scheduled
+   inside it can sound — until the page has had a user gesture. So "a track is loaded" and
+   "the browser has let it play" are two different facts, and the app must say the second
+   one, not the first: the panel waits, and the first tap or key press unfreezes it. */
+function musRunning() {
+  return !!Music.ctx && musNow() > 0.02;
 }
 
 /* The master gain is the one place the volume is ramped: fade in, fade out and crossfade
@@ -551,7 +560,12 @@ function musNewPlayer(id, buf) {
   var ctx = Music.ctx;
   var src = ctx.createBufferSource();
   src.buffer = buf;
-  src.loop = true;                     // repeat until the playlist says "next one"
+  /* One source per PLAY, never src.loop = true: verified in-page, a looping source fires
+     `ended` ZERO times (7 s on a 0.5 s buffer = 11 loops, 0 events), so the playlist's
+     "third play, then the next one" could never be reached and the old track kept running
+     under the new one — the two musics the player picks playing over each other. The
+     buffer is decoded once and reused, so a new play costs no request. */
+  src.loop = false;
   var gain = ctx.createGain();
   gain.gain.value = 1;
   src.connect(gain);
@@ -568,65 +582,92 @@ function musDropPlayer(p) {
   try { p.src.stop(); } catch (e4) {}
 }
 
-/* The track ran to its end. The logic is deliberately the playlist's, not the timer's: the
-   third play of a track switches to the next one (the crossfade), anything else repeats. */
+/* One play finished. The rules are the playlist's, not the clock's: under "All" the third
+   play of a track is its last, and the next one of the order then comes in over the tail;
+   anything else plays the same track again, with no fade and no gap. */
 function musEnded() {
   var now = Date.now();
   if (now - Music.lastEnd < 400) return;   // one transition per end, never two
   Music.lastEnd = now;
   if (!Music.started || Music.overFade || !settings || !settings.music) return;
-  if (PLAYLIST.cycle(Music.state) === "next") musAdvance(0);
+  var id = Music.wantId || (Music.player ? Music.player.id : null);
+  if (!id) return;
+  if (PLAYLIST.cycle(Music.state) === "next") musAdvance();
+  else musPlay(id, 0, false);              // a repeat: same track, at once, at volume
 }
 
-/* The next track of the order, crossfaded in: the old one keeps playing under the new one
-   while its own gain falls, which is what makes the join inaudible. */
-function musAdvance(ms) {
-  if (Music.overFade) return;
+/* The next track of the order (the playlist has already moved its counter). */
+function musAdvance() {
   var pick = PLAYLIST.pick(Music.state);
   var next = PLAYLIST.trackAt(pick.index);
-  if (!next) return;
-  if (Music.player && Music.player.id === next.id) { musStart(next.id, 0); return; }
-  Music.overFade = true;
-  Music.muted = false;
-  musStart(next.id, ms == null ? MUSIC_FADE_MS : ms);
+  if (next) musPlay(next.id, MUSIC_FADE_MS, true);
 }
 
-/* Start a track. A crossfade only happens when another track is still audible underneath. */
-function musStart(id, ms) {
+/* The music never waits for the NEXT track to be downloaded while it is playing: the fetch
+   of a 600 KB file costs seconds, and 25 s of music hides it — but only if the buffer is
+   asked for while the current play is still running. The playlist says which track comes
+   after this one; warming it there is presentation-free (a repeat needs nothing, the
+   buffer is already decoded). */
+function musWarm() {
+  if (!Music.state || !settings || !settings.music) return;
+  var id = PLAYLIST.nextId(Music.state);
+  if (id && !Music.buf[id] && Music.wantId !== id) musFetch(id)["catch"](function () {});
+}
+
+/* Start one play of one track.
+   fadeMs > 0 fades it up from silence (a first play, or the music switched back on);
+            0 starts it at full volume, which is what makes a repeat seamless.
+   cross  = true when another track is still sounding: each play owns a gain under the
+            master, so the outgoing one falls to 0 while the new one climbs to 1 in the
+            same time. The two do overlap — that is the fade the Music menu promises —
+            but their total never doubles, which is what a master dip COULD NOT do:
+            dipping the master silences both tracks at once and leaves the old one
+            running at full volume for a second after.
+   Never a second start() on one source either: verified in-page, it throws
+   "cannot call start more than once" — which is why the frozen first play is dropped
+   and a fresh source is started on the first tap. */
+function musPlay(id, fadeMs, cross) {
   if (!musCtx()) return;
+  /* A play asked for and still waiting on its decode: do not start a second one of the same
+     track while it is in flight (the unlock fallback and the boot play would otherwise
+     overlap — the same bug the menu is here to avoid, one level lower). */
+  if (Music.pendingId === id && !Music.player) return;
   Music.wantId = id;
   Music.started = true;
+  Music.pendingId = id;
   var old = Music.player;
-  var cross = !!old && !Music.muted && ms > 0;
   Music.player = null;
   musFetch(id).then(function (buf) {
     if (!Music.started || Music.wantId !== id) return;   // the player changed its mind
     var ctx = Music.ctx;
+    Music.pendingId = null;
     var p = musNewPlayer(id, buf);
     try { ctx.resume(); } catch (e) {}
-    if (cross) {
-      // Both sources are connected to the master, so pulling the master down and starting
-      // the new track from silence IS the crossfade: no dip, no overlap of two loud tracks.
-      var t = musNow();
-      try { Music.master.gain.cancelScheduledValues(t); } catch (e1) {}
-      try { Music.master.gain.setValueAtTime(MUSIC_VOL, t); } catch (e2) {}
-      try { Music.master.gain.linearRampToValueAtTime(0, t + (ms / 2) / 1000); } catch (e3) {}
-      try { p.src.start(t + ms / 4000); } catch (e4) {}
-      try { Music.master.gain.linearRampToValueAtTime(MUSIC_VOL, t + ms / 1000); } catch (e5) {}
-      (function (dead, dur) {
-        setTimeout(function () { musDropPlayer(dead); }, dur + 400);
-      })(old, ms);
+    var t = musNow();
+    if (cross && old) {
+      Music.overFade = true;
+      try { old.gain.gain.setValueAtTime(old.gain.gain.value, t); } catch (e0) {}
+      try { old.gain.gain.linearRampToValueAtTime(0, t + MUSIC_FADE_MS / 1000); } catch (e1) {}
+      p.gain.gain.value = 0;
+      try { p.gain.gain.setValueAtTime(0, t); } catch (e2) {}
+      try { p.gain.gain.linearRampToValueAtTime(1, t + MUSIC_FADE_MS / 1000); } catch (e3) {}
+      try { p.src.start(t); } catch (e4) {}
+      (function (dead) {                                            // only once it is silent
+        setTimeout(function () { musDropPlayer(dead); Music.overFade = false; }, MUSIC_FADE_MS + 200);
+      })(old);
     } else {
       musDropPlayer(old);
-      try { p.src.start(); } catch (e6) {}
-      musGain(MUSIC_VOL, ms > 0 ? ms : MUSIC_FADE_MS);
+      Music.overFade = false;
+      try { p.src.start(t); } catch (e5) {}
+      musGain(MUSIC_VOL, fadeMs);   // already at volume: a repeat cannot dip the master
     }
     Music.player = p;
-    Music.overFade = false;
     Music.muted = false;
     Music.loadFailed = false;
+    musWarm();               // the next track is already downloading while this one plays
     syncSettingsPanel();
   })["catch"](function () {
+    Music.pendingId = null;
     Music.overFade = false;
     Music.wantId = null;
     Music.started = !!Music.player;
@@ -635,7 +676,7 @@ function musStart(id, ms) {
   });
 }
 
-/* Fade the music down and keep the track's place: switching Music back on resumes it. */
+/* Fade the music down and let go of the track: switching Music back on starts a play again. */
 function musicStop() {
   Music.started = false;
   Music.wantId = null;
@@ -648,36 +689,57 @@ function musicStop() {
   syncSettingsPanel();
 }
 
-/* Music on: resume the track that was faded out, or start one for the first time. */
+/* Music on. Two cases, and the second one is the whole point of the frozen context: */
 function musicStart() {
   if (!musCtx()) return;                 // no audio backend: the switch stays honest
+  if (!Music.state) return;
   try { Music.ctx.resume(); } catch (e) {}
-  var pick = PLAYLIST.pick(Music.state);
-  var id = PLAYLIST.trackAt(pick.index).id;
-  if (Music.player && Music.player.id === id) {
+  Music.started = true;
+  var tr = PLAYLIST.trackAt(PLAYLIST.pick(Music.state).index);
+  if (!tr) return;
+  /* Already sounding on that very track: put the volume back instead of starting over, so
+     switching Music off and on again mid-play keeps the track where it left off. Only when
+     the clock is actually moving — a frozen context means the track never sounded at all,
+     and its source can never be started a second time. */
+  if (Music.player && !Music.overFade && Music.player.id === tr.id && musRunning()) {
     Music.muted = false;
-    Music.started = true;
     musGain(MUSIC_VOL, MUSIC_FADE_MS);
     syncSettingsPanel();
     return;
   }
-  Music.started = true;
-  musStart(id, MUSIC_FADE_MS);
+  musPlay(tr.id, MUSIC_FADE_MS, false);
 }
 
 function musicSelectTrack(id) {
-  var playing = Music.player && !Music.muted;
   PLAYLIST.select(Music.state, id);
-  if (playing) musStart(id, MUSIC_FADE_MS);
+  if (Music.player && !Music.muted && musRunning()) musPlay(id, MUSIC_FADE_MS, true);
+  else if (settings && settings.music) musicStart();   // nothing sounding yet: start it
   else syncSettingsPanel();
 }
 
-/* Browsers refuse audio before the page has been touched: try, and if it is refused, wait
-   for the first tap or key press and try again — that gesture is what unlocks it. */
+/* Browsers refuse audio before the page has been touched: Chrome hands the context out
+   frozen (its clock stays at 0) and the boot play sits inside it. The first tap or key
+   press is what lets resume() through — and a source already started at 0 inside a frozen
+   context DOES play once it is resumed (verified in-page), so the unlock resumes rather
+   than starting a second copy of the same track. If resume() is still refused the clock
+   never moves, and only then is a fresh play started — on the next tap, again. */
 function musicUnlock() {
-  if (!settings || !settings.music) return;
-  if (Music.player && !Music.muted) return;
-  musicStart();
+  if (!settings || !settings.music || !Music.state) return;
+  if (musRunning()) return;              // it is already sounding: nothing to unlock
+  try { Music.ctx.resume(); } catch (e) {}
+  /* resume() does not move the clock by itself, so the panel cannot claim "Playing" yet,
+     and it must not be left saying "waiting" either: a beat later the clock proves what
+     happened. No early return here even when the boot play is already inside — that play
+     still needs the panel to notice the clock moved. */
+  (function () {
+    setTimeout(function () {
+      if (!settings.music) return;
+      if (musRunning()) { syncSettingsPanel(); return; }  // the clock moved: say so
+      var tr = PLAYLIST.trackAt(PLAYLIST.pick(Music.state).index);
+      if (tr) musPlay(tr.id, MUSIC_FADE_MS, false);
+      else syncSettingsPanel();
+    }, 400);
+  })();
 }
 
 /* Web Audio present at all? A context that is merely SUSPENDED (the browser waiting for a
@@ -694,8 +756,15 @@ function musicBoot() {
   // immediately and know whether the engine refused (autoplay policy) rather than never try.
   if (!musCtx()) return;                       // no Web Audio: the Music switch greys out
   var first = PLAYLIST.trackAt(PLAYLIST.pick(Music.state).index).id;
-  musFetch(first)["catch"](function () {});
-  if (settings.music) musStart(first, MUSIC_FADE_MS);
+  /* Decode the startup track NOW, before asking for a play: the fetch of a 600 KB file is
+     what the first tap would otherwise wait for, and warming it here means the tap that
+     unlocks the frozen context can start the play straight away. */
+  musFetch(first).then(function () {
+    if (settings.music) musicStart();
+  })["catch"](function () {
+    Music.loadFailed = true;
+    syncSettingsPanel();
+  });
   window.addEventListener("pointerdown", musicUnlock, { passive: true });
   window.addEventListener("keydown", musicUnlock);
 }
@@ -787,7 +856,10 @@ function syncSettingsPanel() {
     else if (!musicSupported()) mNowEl.textContent = "This browser has no audio engine — music stays off.";
     else if (Music.loadFailed && !Music.player) {
       mNowEl.textContent = "That track could not be loaded — try another music choice.";
-    } else if (Music.player) {
+    } else if (Music.player && musRunning()) {
+      /* A source can exist and still make no sound: Chrome hands the context out frozen
+         until the page gets a gesture, and its clock never moves while that is so. "Playing"
+         is only claimed when the clock proves it. */
       var st = PLAYLIST.pick(Music.state);
       mNowEl.textContent = "Playing: " + PLAYLIST.trackAt(st.index).label +
         (settings.track === PLAYLIST.ALL
