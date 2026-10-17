@@ -898,6 +898,32 @@ body[data-kwizzy="boot"] .title-inner .btn-sm{display:none}
 .mrow.off .switch{cursor:not-allowed;filter:grayscale(1)}
 .switch:disabled{cursor:not-allowed;filter:grayscale(.7);opacity:.75}
 
+/* The music VOLUME: a real slider (thumb-high), dragged anywhere along the track. It is not
+   a look-alike: the app writes it straight into the Web Audio master gain, so the track that
+   is ALREADY playing moves with the thumb, no restart. The knob travel (--vt) is the inner
+   width minus the knob and its 6px of slack; keep the two in sync with .vol's width.
+   The % in the pill is the read-back, so the level is legible, not only felt. */
+.vol{
+  position:relative;flex:0 0 auto;width:104px;height:30px;border-radius:99px;
+  --vt:73px;                                   /* 101 inner - 22 knob - 6 slack */
+  background:rgba(255,255,255,.10);border:1.5px solid var(--edge);cursor:ew-resize;
+  transition:background .2s ease,border-color .2s ease;
+}
+.vol .vfill{
+  position:absolute;left:0;top:0;bottom:0;border-radius:99px;
+  width:calc(3px + var(--p,1) * var(--vt) + 22px);
+  background:var(--grad);opacity:.5;transition:width .14s ease;
+}
+.vol .vknob{
+  position:absolute;left:3px;top:50%;width:22px;height:22px;border-radius:50%;margin-top:-11px;
+  background:var(--faint);transform:translateX(calc(var(--p,1) * var(--vt)));
+  transition:transform .14s ease,background .2s ease;
+}
+.vol:active .vknob{transform:translateX(calc(var(--p,1) * var(--vt))) scale(.9)}
+.mrow.off .vol{cursor:not-allowed;filter:grayscale(1);opacity:.6}
+.mrow.off .vol .vfill{opacity:.25}
+.vol:focus-visible{outline:2px solid var(--teal);outline-offset:3px}
+
 .msep{height:1px;margin:3px 0;background:var(--edge-soft)}
 .mh{font-size:.86rem;font-weight:800;display:flex;align-items:center;gap:8px}
 .mhint{margin:-4px 0 0;font-size:.71rem;color:var(--dim);line-height:1.45}
@@ -930,7 +956,7 @@ body[data-kwizzy="boot"] .title-inner .btn-sm{display:none}
    a scratch script): stacked it wants 642px, a 390x844 phone gives it 760, but a 390x664 one
    gives 580, so the chips tier starts at 780. overflow-y:auto below is only a safety net for
    a viewport where even the compact card does not fit; at real sizes nothing scrolls. */
-@media (max-height:900px){
+@media (max-height:960px){
   .menu{padding:12px 14px;gap:8px}
   .mrow{padding:8px 10px}
   .mrow-d{font-size:.66rem}
@@ -939,7 +965,7 @@ body[data-kwizzy="boot"] .title-inner .btn-sm{display:none}
   .menu .tracks .track{padding:6px 10px}
   .tk-n{font-size:.64rem}
 }
-@media (max-height:780px){
+@media (max-height:818px){
   .tracks{flex-direction:row;flex-wrap:wrap;align-items:start;gap:4px}
   .menu .tracks .track{
     width:auto;min-width:0;flex:1 1 0;padding:5px 9px;border-radius:10px;gap:0;
@@ -966,17 +992,38 @@ body[data-kwizzy="boot"] .title-inner .btn-sm{display:none}
   .menu-title{font-size:.86rem}
   /* the card hangs 42px under the burger; on a 390px-tall landscape that bottom margin is
      what is left over, so it gives the extra headroom the compact card still needs */
-  .menu{max-height:calc(100dvh - 70px)}
+  /* the card hangs 42px under the burger, so what is left at the bottom is what is
+     still free: in these short viewports it is given back rather than kept as air */
+  .menu{max-height:calc(100dvh - 52px)}
 }
 /* The shortest phones laid sideways (a 667x370 viewport gives the card 300px): the "Music
    choice / All" header is the last thing standing, and the lit chip already says which one
    is selected, so it is the row that goes. Measured: without it 667x370 wants 289 of 300. */
-@media (max-height:520px){
+@media (max-height:620px){
   .mh{display:none}
   .menu{padding:5px 9px;gap:3px}
   .tracks{gap:3px}
   .menu .tracks .track{padding:4px 8px}
   .now{font-size:.6rem}
+}
+/* The shortest landscape phones a 430px-tall tier cannot reach: the controls themselves
+   shrink (a 22px switch and a 22px slider are still a thumb target, 44px wide is not the
+   issue — the ROW is). Measured: 600x340 wants 270 of 270 with this, 289 without. */
+@media (max-height:500px){
+  .menu{padding:4px 9px;gap:3px}
+  .mrow{padding:2px 7px;gap:6px}
+  .mrow-t{font-size:.72rem}
+  .switch{width:38px;height:22px}
+  .switch .knob{width:16px;height:16px;margin-top:-8px}
+  .mrow.on .switch .knob{transform:translateX(16px)}
+  .mrow.on .switch:active .knob{transform:translateX(16px) scale(.9)}
+  .vol{height:22px;width:92px;--vt:63px}      /* 89 inner - 18 knob - 8 slack */
+  .vol .vfill{width:calc(3px + var(--p,1) * var(--vt) + 18px)}
+  .vol .vknob{width:18px;height:18px;margin-top:-9px}
+  .vol:active .vknob{transform:translateX(calc(var(--p,1) * var(--vt))) scale(.9)}
+  .menu-head{gap:4px}
+  .menu-x{width:26px;height:26px;font-size:1rem}
+  .menu-title{font-size:.8rem}
 }
 
 /* one class on <body> redefines --measure; every column already reads it, so the

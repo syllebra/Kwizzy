@@ -64,6 +64,16 @@
               aria-labelledby="row-music"><span class="knob"></span></button>
     </div>
 
+    <!-- The music volume: a real slider, dragged with a thumb. It is the Web Audio master
+         gain, so it moves the track THAT IS PLAYING, not only the next one. Keyboard too
+         (arrows), and the % is written back in the pill so the state is read, not felt. -->
+    <div class="mrow" id="row-vol">
+      <div class="mrow-t">Music volume <span class="pill" id="vol-pill">100%</span></div>
+      <div class="vol" id="set-vol" role="slider" tabindex="0"
+           aria-label="Music volume" aria-valuemin="0" aria-valuemax="100"
+           aria-valuenow="100"><span class="vfill"></span><span class="vknob"></span></div>
+    </div>
+
     <div class="mrow" id="row-haptics">
       <div class="mrow-t">Haptic feedback<span class="mrow-d" id="hap-note">Short vibrations on taps and answers.</span></div>
       <button class="switch press" id="set-haptics" role="switch" aria-checked="true"

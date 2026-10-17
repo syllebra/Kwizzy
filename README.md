@@ -25,11 +25,14 @@ The interface is a set of full-viewport **Screens** — the player is on exactly
 5. **About** — sources, credits, and the memory tools.
 
 Two fixed corner buttons sit above every Screen: fullscreen, and the **burger** (sound & music).
+Fullscreen asks the browser for its own fill-screen — the page takes the whole screen and the
+browser's bar goes with it — and falls back to filling the layout when a browser will not let a
+page do that (see ADR 0007).
 
 ## Sound, music and haptics
 
 The burger opens a drawer with three switches — **Sound effects**, **Music**, **Haptic feedback** —
-and the **Music choice**. Each choice is remembered in `localStorage` under `kwizzy.settings.v1`,
+a **Music volume** slider, and the **Music choice**. Each choice is remembered in `localStorage` under `kwizzy.settings.v1`,
 separately from the game memory, so "Reset memory" erases what you played without changing how the
 app sounds. Haptics is greyed out, with the reason in words, where the device has no vibration;
 Music is greyed out where the browser has no audio engine.

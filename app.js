@@ -258,7 +258,10 @@ function loadSettings() {
     sfx: !o || o.sfx !== false,               // `!== false`: an untouched default is ON
     music: !o || o.music !== false,
     haptics: !o || o.haptics !== false,
-    track: o && PLAYLIST.validTrack(o.track) ? o.track : "all"
+    track: o && PLAYLIST.validTrack(o.track) ? o.track : "all",
+    /* 0..1. A saved value that is not a number (an older payload, a tampered localStorage)
+       is the default, never NaN into the gain node. */
+    vol: (o && typeof o.vol === "number" && o.vol >= 0 && o.vol <= 1) ? o.vol : VOL_DEFAULT
   };
   return settings;
 }
@@ -479,6 +482,7 @@ function thump(el, cls) {
 var PLAYLIST = window.KwizzyPlaylist;
 var MUSIC_FADE_MS = 1200;      // fade in/out and crossfade over this
 var MUSIC_VOL = 0.55;          // the music sits well under the effects (sfx peak ~0.30)
+var VOL_DEFAULT = 1;           // the slider's own 0..1 multiplier on top of that (100%)
 
 var Music = {
   ctx: null, master: null,
@@ -519,6 +523,23 @@ function musCtx() {
    one, not the first: the panel waits, and the first tap or key press unfreezes it. */
 function musRunning() {
   return !!Music.ctx && musNow() > 0.02;
+}
+
+/* The slider moved: the master gain is re-aimed IMMEDIATELY (160 ms ramp), so the track that
+   is already playing follows the thumb — it is not the next track that changes. Nothing is
+   started, stopped or restarted, and when the music is off the level is only remembered. */
+function musSetVol(ms) {
+  if (!Music.ctx || !Music.master) return;
+  if (settings.music && Music.started) musGain(musVol(), ms === undefined ? 160 : ms);
+}
+
+/* The level the master gain is aimed at: the loudness of the set TIMES the slider. Read as a
+   function so the slider can move it at any time, even mid-track. */
+function musVol() {
+  var v = settings && settings.vol !== undefined ? settings.vol : VOL_DEFAULT;
+  if (v < 0) v = 0;
+  if (v > 1) v = 1;
+  return MUSIC_VOL * v;
 }
 
 /* The master gain is the one place the volume is ramped: fade in, fade out and crossfade
@@ -659,7 +680,7 @@ function musPlay(id, fadeMs, cross) {
       musDropPlayer(old);
       Music.overFade = false;
       try { p.src.start(t); } catch (e5) {}
-      musGain(MUSIC_VOL, fadeMs);   // already at volume: a repeat cannot dip the master
+      musGain(musVol(), fadeMs);   // already at volume: a repeat cannot dip the master
     }
     Music.player = p;
     Music.muted = false;
@@ -703,7 +724,7 @@ function musicStart() {
      and its source can never be started a second time. */
   if (Music.player && !Music.overFade && Music.player.id === tr.id && musRunning()) {
     Music.muted = false;
-    musGain(MUSIC_VOL, MUSIC_FADE_MS);
+    musGain(musVol(), MUSIC_FADE_MS);
     syncSettingsPanel();
     return;
   }
@@ -775,7 +796,8 @@ function musicBoot() {
    is what makes the sound, this only says what is on and takes the player's choice. */
 var menuEl = null, menuBackEl = null, burgerEl = null;
 var mSfxEl = null, mMusicEl = null, mHapEl = null, mHapRow = null,
-    mListEl = null, mNowEl = null, mSelEl = null;
+    mListEl = null, mNowEl = null, mSelEl = null,
+    mVolEl = null, mVolRow = null, mVolPill = null;
 
 function initSettingsPanel() {
   menuEl = document.getElementById("settings-menu");
@@ -787,6 +809,9 @@ function initSettingsPanel() {
   mHapRow = mHapEl ? mHapEl.closest(".mrow") : null;
   mListEl = document.getElementById("track-list");
   mNowEl = document.getElementById("music-now");
+  mVolEl = document.getElementById("set-vol");
+  mVolRow = mVolEl ? mVolEl.closest(".mrow") : null;
+  mVolPill = document.getElementById("vol-pill");
   mSelEl = document.getElementById("music-sel");
   buildTrackList();
   wireMenu();
@@ -844,6 +869,16 @@ function syncSettingsPanel() {
   if (mMusicEl) mMusicEl.disabled = !musicSupported();   // no Web Audio: greys out, like haptics
   if (mHapRow) mHapRow.classList.toggle("off", !navigator.vibrate);
   if (mSelEl) mSelEl.textContent = PLAYLIST.label(settings.track);
+  if (mVolPill) mVolPill.textContent = Math.round((settings.vol === undefined ?
+    VOL_DEFAULT : settings.vol) * 100) + "%";
+  /* A level restored from localStorage must be on the slider itself too, not only in the
+     pill: the markup default (100) would otherwise sit there until the next drag, so a
+     screen reader would announce the wrong level. */
+  if (mVolEl) {
+    mVolEl.setAttribute("aria-valuenow", String(Math.round(settings.vol * 100)));
+    mVolEl.style.setProperty("--p", String(settings.vol));
+  }
+  if (mVolRow) mVolRow.classList.toggle("off", !settings.music);
   if (mListEl) {
     for (var i = 0; i < mListEl.children.length; i++) {
       var row = mListEl.children[i];
@@ -894,6 +929,57 @@ function closeMenu() {
 }
 function toggleMenu() { if (isMenuOpen()) closeMenu(); else openMenu(); }
 
+/* The volume slider. A thumb, a mouse or the keyboard all land in the same 0..1 number:
+   - pointer: the x of the touch inside the track, so a tap anywhere SETS the level to that
+     spot (no "grab the knob first" on a phone, which is what makes a slider annoying there);
+   - keyboard: arrows on the focused slider, in 5% steps, tab to reach it.
+   The pill is written back on every change so the level is READ, not only felt (ADR 0004),
+   and aria-valuenow moves with it. A drag is one pointerdown + moves: only pointermove while
+   the button is down counts, so a hovering pointer changes nothing. */
+var volDrag = false;
+function volSet(p) {
+  if (!mVolEl) return;
+  if (p < 0) p = 0;
+  if (p > 1) p = 1;
+  settings.vol = Math.round(p * 20) / 20;   // 5% steps: a thumb cannot land on 37.4%
+  saveSettings();
+  mVolEl.setAttribute("aria-valuenow", String(Math.round(settings.vol * 100)));
+  mVolEl.style.setProperty("--p", String(settings.vol));
+  if (mVolPill) mVolPill.textContent = Math.round(settings.vol * 100) + "%";
+  if (mVolRow) mVolRow.classList.toggle("off", !settings.music);
+  musSetVol(160);                            // the track already playing follows the thumb
+}
+function volAt(client) {                          /* x inside the track -> 0..1 */
+  if (!mVolEl) return;
+  var r = mVolEl.getBoundingClientRect();
+  if (!r.width) return;
+  volSet((client - r.left - 14) / (r.width - 28));   // 14px of knob+slack each side
+}
+function wireVol() {
+  if (!mVolEl) return;
+  mVolEl.addEventListener("pointerdown", function (ev) {
+    volDrag = true;
+    volAt(ev.clientX);
+    haptic(20);
+    sfx("tap");                     // the grab ticks once; the drag itself stays silent
+  }, { passive: true });
+  mVolEl.addEventListener("pointermove", function (ev) {
+    if (volDrag) volAt(ev.clientX);
+  }, { passive: true });
+  var up = function (ev) { volDrag = false; };
+  mVolEl.addEventListener("pointerup", up, { passive: true });
+  mVolEl.addEventListener("pointercancel", up, { passive: true });
+  mVolEl.addEventListener("keydown", function (ev) {
+    var d = 0;
+    if (ev.key === "ArrowRight" || ev.key === "ArrowUp") d = 0.05;
+    else if (ev.key === "ArrowLeft" || ev.key === "ArrowDown") d = -0.05;
+    else if (ev.key === "Enter" || ev.key === " ") d = 0;      // just re-state it
+    else return;
+    ev.preventDefault();
+    volSet((settings ? settings.vol : VOL_DEFAULT) + d);
+  });
+}
+
 function wireMenu() {
   var close = document.getElementById("menu-close");
   if (burgerEl) burgerEl.addEventListener("click", function (ev) {
@@ -916,6 +1002,7 @@ function wireMenu() {
     syncSettingsPanel();
     toast(settings.music ? "Music on." : "Music off.");
   });
+  wireVol();
   if (mHapEl) mHapEl.addEventListener("click", function () {
     settings.haptics = !settings.haptics;
     saveSettings();
@@ -1887,20 +1974,103 @@ function wireScreens() {
   });
 }
 
-/* Fullscreen toggle. One class on <body> (`.fs`) flips --measure, which every column
-   already reads, so the whole layout re-flows with no per-screen work. The button is a
-   fixed element in the markup (not inside a screen) so it is there during loading too. */
+/* Fullscreen: the BROWSER's own fill-screen, not our own guess. The Fullscreen API
+   (documentElement.requestFullscreen) puts the page on the top layer over the whole screen
+   and takes the browser chrome away — the URL bar, the tab bar, the phone's top bar. That is
+   what the player asked for when they said "the browser fill screen functionality"; a wider
+   CSS column is not the same thing and cannot remove what the browser draws outside the page.
+
+   It is not free though, and it is refused in more places than caniuse claims (iOS Safari is
+   only "partial"), so three facts are kept apart:
+     - fsSupported(): the method exists at all;
+     - fsOn: what the browser actually did, read back from the fullscreenchange event — a
+       request can be refused in silence and the ONLY proof is that event (measured: on
+       desktop Chromium requestFullscreen() did not throw and fullscreenchange fired).
+   When the browser says no, we fall back to the CSS column and SAY so, rather than pretend.
+
+   The CSS class is applied in both cases: the layout must fill the new screen, and when the
+   API is unavailable it is the whole effect the player gets. */
 var fsBtn = null;
+var fsOn = false;              // our belief about the browser's fullscreen state
+var fsApi = null;              /* null = not tried yet; true = the browser obliged;
+                                 false = the CSS column only. The button NAMES which, because
+                                 the same icon cannot mean two different things (ADR 0004). */
+/* The button's NAME carries the state, not only its colour (ADR 0004) - and it carries WHICH
+   fullscreen this browser actually gave, since the same icon cannot mean two different things.
+   Built from both facts, so the "off" wording never claims the page is filling the screen. */
+function fsName(on) {
+  if (!fsBtn) return;
+  var name;
+  if (on) name = fsApi === false ? "Fullscreen on: the layout fills the screen (this browser will not hide its own bar)"
+                                 : "Fullscreen on: the page takes the whole screen, browser bar included";
+  else name = fsApi === false ? "Fullscreen off: comfortable reading column"
+                               : "Fullscreen off: the browser chrome is back";
+  fsBtn.setAttribute("aria-label", name);
+}
+/* The two halves of the API do NOT live on the same object, and that is the whole reason
+   the toggle used to be a one-way door: requestFullscreen() is a method of the ELEMENT,
+   exitFullscreen() is a method of the DOCUMENT. Calling exitFullscreen on the element
+   throws (measured in this browser: documentElement.exitFullscreen is undefined while
+   document.exitFullscreen() ran fine and a fullscreenchange fired right after it). */
+function fsSupported() {
+  var de = document.documentElement;
+  var canIn = typeof de.requestFullscreen === "function" ||
+              typeof de.webkitRequestFullscreen === "function";
+  var canOut = typeof document.exitFullscreen === "function" ||
+               typeof document.webkitExitFullscreen === "function";
+  return canIn && canOut;
+}
+function fsAsk(on) {
+  var de = document.documentElement;
+  try {
+    if (on) {
+      if (de.requestFullscreen) de.requestFullscreen();
+      else de.webkitRequestFullscreen();
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else document.webkitExitFullscreen();
+    }
+    return true;
+  } catch (e) { return false; }        // refused: the caller falls back to the CSS column
+}
 function wireFs() {
   fsBtn = document.getElementById("btn-fs");
   if (!fsBtn) return;
+  /* The browser can leave fullscreen without asking us (Firefox answers Escape, a
+     fullscreenchange with isFullscreen=false lands): follow it, never fight it. */
+  /* Chromium fires fullscreenchange but leaves isFullscreen UNDEFINED (measured), so the
+     read-back is only trusted when it really is a boolean; elsewhere our own belief stands,
+     and a blind toggle is out of the question — it would undo the request we just made. */
+  document.addEventListener("fullscreenchange", function () {
+    var v = document.documentElement.isFullscreen;
+    if (v !== true && v !== false) return;
+    if (v === fsOn) return;
+    fsOn = v;
+    document.body.classList.toggle("fs", v);
+    fsBtn.classList.toggle("on", v);
+    fsName(v);
+  });
   fsBtn.addEventListener("click", function () {
-    var on = !document.body.classList.contains("fs");
-    if (on) document.body.classList.add("fs");
-    else document.body.classList.remove("fs");
-    fsBtn.classList.toggle("on", on);
-    toast(on ? "Fullscreen: content fills the whole screen."
-              : "Fullscreen off: comfortable reading column back.");
+    var want = !fsOn;
+    var got = fsSupported() && fsAsk(want);
+    fsApi = got;
+    if (got) {
+      fsOn = want;
+      document.body.classList.toggle("fs", want);
+      fsBtn.classList.toggle("on", want);
+      toast(want ? "Fullscreen: the page takes the whole screen, browser bar included."
+                 : "Fullscreen off: the browser chrome is back.");
+    } else {
+      /* No Fullscreen API here: the page cannot eat the browser's own chrome. The CSS column
+         is still worth giving the player (it is what the layout can do), but it is announced
+         as the lesser thing it is. */
+      var css = !document.body.classList.contains("fs");
+      document.body.classList.toggle("fs", css);
+      fsBtn.classList.toggle("on", css);
+      toast(css ? "This browser will not let a page take the full screen — the layout fills it instead."
+                : "Wide layout off: comfortable reading column back.");
+    }
+    fsName(want);
   });
 }
 

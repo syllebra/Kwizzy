@@ -24,10 +24,22 @@ Two things make the feature non-trivial:
 ## Decision
 
 **Player choices live in their own key.** `localStorage kwizzy.settings.v1` holds
-`{sfx, music, haptics, track}`; game memory stays in `kwizzy.v1` (ADR 0005). "Reset memory" clears
+`{sfx, music, haptics, track, vol}`; game memory stays in `kwizzy.v1` (ADR 0005). "Reset memory" clears
 what you played and never how the app sounds. Every field is read with a forgiving default
 (`x !== false`, and an unknown `track` falls back to `all`), so a partial, corrupt or stale value
 loads as a working configuration instead of none.
+
+**A slider for the one thing that has a level.** The three switches are on/off, but the music
+has a loudness, and a switch cannot express it: the drawer carries a fourth row, "Music volume",
+whose control is a real slider dragged with a thumb (and with the keyboard: arrows on the focused
+slider, 5% steps). A tap anywhere on the track SETS the level to that spot rather than grabbing a
+knob first, which is what makes a small slider annoying on a phone. It is not a look-alike: the
+number it lands on is written straight into the master gain, so the track ALREADY playing follows
+the thumb with a 160 ms ramp, no restart. 0% is not silence — the row and the whole control grey
+out when Music is off, and the level is stated in words in the pill (`100%`) and in
+`aria-valuenow`, per ADR 0004, so it is read and not only felt. The saved value is re-checked on
+load like every other field: a `vol` that is not a number in [0,1] is the default, never NaN into
+a gain node.
 
 **Three switches, three separate things.** Sound effects, Music and Haptics are independent: the
 settings drawer shows each one's state on the row (`.on`) and states it in words
@@ -69,11 +81,12 @@ wrong content type is one of the ways a browser refuses to decode.
 
 ## Consequences
 
-- The music engine is verified by `media/music/_harness/run.js`, which loads the **real** `app.js`
-  in Node against a fake DOM and a fake Web Audio engine and drives the real UI (98 checks: the
-  drawer, the switches, three plays then a crossfade, a single tracked looping, fade-out and stop,
-  persistence, a corrupt saved choice, a device that cannot vibrate, media that will not load).
-  It is a development tool, not shipped code.
+- The rules are verified by `media/music/playlist.test.js` (plain `node`, no framework). The
+  engine itself is verified in the browser: a scratch page exposes `window.__kw` and counts the
+  `AudioBufferSourceNode`s the engine creates, which is how "one source per play" and the
+  spacing of the plays was read off rather than assumed. (The Node harness this ADR used to
+  describe, `media/music/_harness/run.js`, is not in the repo — it was never committed and the
+  browser probe above replaced it.)
 - Fuzzy boundaries are covered on purpose: a corrupt settings blob, an unknown track id, a
   `localStorage` that throws, and a track that 404s all leave a working app.
 - `Music` keeps decoded buffers for the life of the page: about 1.2 MB per track at 8 minutes of
@@ -81,3 +94,6 @@ wrong content type is one of the ways a browser refuses to decode.
 - The music continues across Screens — an `AudioContext` is not attached to a DOM node — but the
   drawer closes when the Screen changes, because it belongs to the Screen it was opened on.
 - Adding a track is one entry in `playlist.js` TRACKS; nothing in the engine is per-track.
+- `settings.vol` is one more field in the same key and one more row in the same drawer; both
+  the pill and the slider are re-synced on boot, so a level restored from `localStorage` is
+  shown, not silently applied.
